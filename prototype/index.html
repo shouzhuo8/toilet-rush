@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>TOILET RUSH · 课间特急</title>
+<title>课间特急：厕所攻防战</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; background: #1a1812; font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; overflow: hidden; touch-action: none; }
@@ -104,32 +104,33 @@
   </div>
   <div id="cvwrap">
     <canvas id="cv" width="1500" height="620"></canvas>
-    <div id="portraitTip">LANDSCAPE RECOMMENDED · 横屏更佳</div>
+    <div id="portraitTip">建议横屏游玩</div>
     <div id="banners"></div>
     <div id="tipbar">Q 交互 · E 嗅闻/涡轮 · F 道具 · P 出拳</div>
     <div id="postUI">
-      <button id="btnShout"id="btnShout" data-i18n="shout">📢 喊话要纸！</button>
-      <button id="btnNaked" data-i18n="btnNaked">🩲 光屁股出门找纸/洗手</button>
-      <button id="btnBreak" data-i18n="btnBreak">💩 破罐破摔(+5s)</button>
+      <button id="btnShout">📢 喊话要纸！</button>
+      <button id="btnNaked">🩲 光屁股出门找纸/洗手</button>
+      <button id="btnBreak">💩 破罐破摔(+5s)</button>
     </div>
     <div id="touch">
       <div id="joy"><div id="knob"></div></div>
-      <button id="btnRun" data-i18n="btnRun">走</button>
-      <button id="btnP" style="position:absolute;left:160px;bottom:124px;width:56px;height:32px;border-radius:8px;border:2px solid #ffffff44;background:#ffffff1c;color:#fff;font-size:12px;font-weight:900;pointer-events:auto"data-i18n="btnPunch">出拳</button>
-      <button id="btnR" style="position:absolute;left:160px;bottom:80px;width:56px;height:32px;border-radius:8px;border:2px solid #ffffff44;background:#ffffff1c;color:#fff;font-size:12px;font-weight:900;pointer-events:auto"data-i18n="btnFlush">冲水</button>
-      <button class="abtn" id="btnQ" data-i18n="btnInteract">交互</button>
-      <button class="abtn" id="btnE" data-i18n="btnSkill">技能</button>
-      <button class="abtn" id="btnF" data-i18n="btnItem">道具</button>
-      <button class="abtn" id="btnX" data-i18n="btnCancel">取消</button>
+      <button id="btnRun">走</button>
+      <button id="btnP" style="position:absolute;left:160px;bottom:124px;width:56px;height:32px;border-radius:8px;border:2px solid #ffffff44;background:#ffffff1c;color:#fff;font-size:12px;font-weight:900;pointer-events:auto">出拳</button>
+      <button id="btnR" style="position:absolute;left:160px;bottom:80px;width:56px;height:32px;border-radius:8px;border:2px solid #ffffff44;background:#ffffff1c;color:#fff;font-size:12px;font-weight:900;pointer-events:auto">冲水</button>
+      <button class="abtn" id="btnQ">交互</button>
+      <button class="abtn" id="btnE">技能</button>
+      <button class="abtn" id="btnF">道具</button>
+      <button class="abtn" id="btnX">取消</button>
     </div>
     <div id="endUI">
       <h1 id="endTitle">下课结束！</h1>
       <div id="boards"></div>
-      <button id="btnAgain" data-i18n="again">再来一局</button>
+      <button id="btnAgain">再来一局</button>
     </div>
   </div>
 </div>
 <script src="/client/game/art.js"></script>
+<script src="/client/game/ui.js"></script>
 <script src="/client/game/game.js"></script>
 <script>
   // banners 由 game.js 通过 DOM 注入
