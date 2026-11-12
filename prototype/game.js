@@ -716,13 +716,22 @@ if (typeof window !== 'undefined') (function () {
     knob.style.transform = `translate(${dx}px,${dy}px)`;
   }
   function joyEnd() { joy.on = false; joy.dx = joy.dy = 0; knob.style.transform = 'translate(0,0)'; }
-  joyEl.addEventListener('touchstart', joyStart, { passive: true }); joyEl.addEventListener('touchmove', joyMove, { passive: true }); joyEl.addEventListener('touchend', joyEnd);
+  joyEl.addEventListener('touchstart', e => { e.preventDefault(); joyStart(e); }, { passive: false });
+  joyEl.addEventListener('touchmove', e => { e.preventDefault(); joyMove(e); }, { passive: false });
+  joyEl.addEventListener('touchend', joyEnd); joyEl.addEventListener('touchcancel', joyEnd);
   joyEl.addEventListener('mousedown', joyStart); window.addEventListener('mousemove', joyMove); window.addEventListener('mouseup', joyEnd);
-  document.getElementById('btnQ').addEventListener('click', doInteract);
-  document.getElementById('btnE').addEventListener('click', doSkill);
-  document.getElementById('btnF').addEventListener('click', () => sim.queue(0, 'soda'));
-  document.getElementById('btnX').addEventListener('click', doCancel);
-  document.getElementById('btnRun').addEventListener('click', () => cycleMode());
+  // touch 按钮：touchend 触发（点按=松开时执行，符合手游手感），并阻止 300ms click 延迟与滚动
+  const bindTap = (id, fn) => {
+    const el = document.getElementById(id);
+    let fired = false;
+    el.addEventListener('touchend', e => { e.preventDefault(); fired = true; fn(); }, { passive: false });
+    el.addEventListener('click', e => { if (fired) { fired = false; e.preventDefault(); return; } fn(); });
+  };
+  bindTap('btnQ', doInteract);
+  bindTap('btnE', doSkill);
+  bindTap('btnF', () => sim.queue(0, 'soda'));
+  bindTap('btnX', doCancel);
+  bindTap('btnRun', () => cycleMode());
   function cycleMode() {
     const order = ['walk', 'run', 'sneak']; const m = { 走: 'run', 跑: 'sneak', 潜: 'walk' };
     const el = document.getElementById('btnRun');
