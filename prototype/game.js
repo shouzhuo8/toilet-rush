@@ -14,7 +14,7 @@ const NUM = {
   speed: { run: 60, walk: 43, sneak: 21.6 }, // px/s（≈12px/m）
   relief: { poop: s(14) },
   turboSave: s(5), comicSave: s(2),
-  guide: { wire: s(1.2), ladder: s(2), poke: s(1.5), bonk: s(0.5), knock: s(1.5), wash: s(1.5), takePaper: s(0.5),
+  guide: { wire: s(1.2), ladder: s(2), poke: s(1.5), bonk: s(0.5), knock: s(1.5), wash: s(1.5), takePaper: s(0.5), climbPaper: s(1.5), climbOut: s(0.8),
            sniff: s(1.5), paper: s(1.5), clearPA: s(3), clearPB: s(5), clearBA: s(8),
            push: s(2), enter: s(0.5) },
   cd: { pokeDoor: s(3), knock: s(10), knockAbort: s(5), reenter: s(3) },
@@ -24,7 +24,7 @@ const NUM = {
   dean: { prob: 0.6, spawnMin: s(20), spawnMax: s(55), stayMin: s(10), stayMax: s(20), anger: 0.30 },
   stall: { obstacle: 0.35, paper: 0.70 },
   bells: { pre: s(90), preMult: 1.5, cap: s(180), softAt: 3, softT: s(45), softMult: 3 },
-  post: { autoBreak: s(10), penalty: s(5), autoPenalty: s(8), washPenalty: s(5), nakedMult: 0.6, washGuide: s(1.5), takePaper: s(0.5) },
+  post: { autoBreak: s(10), penalty: s(5), autoPenalty: s(8), washPenalty: s(5), nakedMult: 0.6, washGuide: s(1.5), takePaper: s(0.5), climbPaper: s(1.5), climbOut: s(0.8) },
   sniff: { errBare: 0.10, errMask: 0.15, infect: 0.45, rate: 0.30, range: 52 },
   soda: { dur: s(20), mult: 0.5 },
   splash: { broom: 0.30, dmg: 5 },
@@ -114,6 +114,7 @@ class Sim {
       relief: null, // {kind,total,left}
       post: null, // {shouted, autoAt}
       naked: false, // 光屁股移动态（裁决#18）：可去有纸隔间取纸 / 洗手台优雅结束
+      climbed: -1, hasClimbedPaper: false, // 裁决#19：翻入取纸→沿原路爬出后才定型
       final: null, // {kind:'done'|'blowout'|'dead', time}
       staggerUntil: 0, armorUntil: 0, rageUntil: 0, immuneUntil: 0,
       drainBuffUntil: 0, sodaUntil: 0, reenterCDUntil: 0,
@@ -158,7 +159,7 @@ class Sim {
   _startGuide(p, g) {
     p.charging = g; g.startT = this.t;
     g.resolveT = this.t + g.dur; g.cancelReq = false;
-    if (g.type === 'wire' || g.type === 'ladder') { g.occId = this.stalls[g.target.idx].occId; }
+    if (g.type === 'wire' || g.type === 'ladder' || g.type === 'climbPaper') { g.occId = this.stalls[g.target.idx].occId; }
     else if (g.type === 'poke' || g.type === 'bonk' || g.type === 'knock' || g.type === 'sniff' || g.type === 'paper') { g.occId = this.stalls[g.target.idx].occId; }
     this._ev('guideStart', { pid: p.id, act: g.type, dur: g.dur });
   }
@@ -302,7 +303,7 @@ class Sim {
   }
   _finalize(p, kind, penalty = 0) {
     if (p.final) return;
-    p.charging = null; p.state = 'idle'; p.relief = null; p.post = null; p.naked = false;
+    p.charging = null; p.state = 'idle'; p.relief = null; p.post = null; p.naked = false; p.climbed = -1;
     if (p.atStall >= 0) { const st = this.stalls[p.atStall]; if (st.occ === p) { st.occ = null; st.occKind = null; st.occId++; st.harass = 0; this.clearFake(st); } p.atStall = -1; }
     p.final = { kind, time: kind === 'done' ? Math.max(0.05, (this.t - this.bellT) / TICK + penalty / TICK) : (this.t - this.bellT) / TICK };
     this.finalCount++;
@@ -437,6 +438,24 @@ class Sim {
         this._startGuide(p, { type: 'takePaper', dur: NUM.guide.takePaper, target: tg, occId: st.occId });
         return;
       }
+      case 'raidPaper': { // 光屁股翻墙/撬锁进有人的有纸房（不逼出）
+        if (!p.naked || !st || !st.hasPaper || !st.occ || st.occ === 'dean') return fail('cond');
+        if (dist(p, st.doorPt) > (inToilet(p) ? NUM.reach : NUM.actR + 26)) return fail('far');
+        const tool = p.items.includes('ladder') ? 'ladder' : p.items.includes('wire') ? 'wire' : null;
+        if (!tool) return fail('noitem');
+        this._startGuide(p, { type: tool, dur: tool === 'ladder' ? NUM.guide.ladder : NUM.guide.wire, target: tg, raid: true });
+        return;
+      }
+      case 'takeClimbed': { // 翻入后取纸（0.5s），不占坑
+        if (p.climbed < 0 || p.climbed !== tg.idx || !st || !st.hasPaper) return fail('cond');
+        this._startGuide(p, { type: 'takePaper', dur: NUM.guide.takePaper, target: tg, occId: st.occId, climbed: true });
+        return;
+      }
+      case 'climbOut': { // 沿原路爬出（0.8s），完成采样后干净收场
+        if (p.climbed < 0 || p.climbed !== tg.idx) return fail('cond');
+        this._startGuide(p, { type: 'climbOut', dur: NUM.guide.climbOut, target: tg });
+        return;
+      }
       case 'wash': {
         if (!p.naked) return fail('cond');
         if (dist(p, SINK) > (inToilet(p) ? NUM.reach : NUM.actR + 26)) return fail('far');
@@ -497,9 +516,17 @@ class Sim {
         this._ev('paperDone', { pid: p.id, vid: occ.id }); return;
       }
       case 'takePaper': {
-        if (!st || !st.hasPaper || st.occ || st.obstacle) { this._ev('intentFail', { pid: p.id, why: 'target', act: 'takePaper' }); return; }
-        st.hasPaper = false; this.clearFake(st);
+        if (!st || !st.hasPaper || st.obstacle || (!g.climbed && st.occ)) { this._ev('intentFail', { pid: p.id, why: 'target', act: 'takePaper' }); return; }
+        st.hasPaper = false;
+        if (g.climbed) { this._ev('paperGot', { pid: p.id, idx: st.idx }); p.hasClimbedPaper = true; return; } // 翻入取纸：等爬出才定型
+        this.clearFake(st);
         this._cleanFinish(p, 'paper'); return;
+      }
+      case 'climbOut': {
+        if (p.climbed !== g.target.idx || !p.hasClimbedPaper) { this._ev('intentFail', { pid: p.id, why: 'target', act: 'climbOut' }); return; }
+        p.climbed = -1; p.hasClimbedPaper = false;
+        this._ev('climbOut', { pid: p.id, idx: g.target.idx });
+        this._cleanFinish(p, 'paper'); return; // 0 惩罚干净完成
       }
       case 'wash': { this._cleanFinish(p, 'wash', NUM.post.washPenalty); return; }
       case 'clear': {
@@ -513,7 +540,11 @@ class Sim {
   _resolvePush(p, g, st) {
     p.charging = null;
     if (st.occ === 'dean') { this._ev('caught', { pid: p.id }); this._finalize(p, 'dead'); return; }
-    if (st.occ && st.occ !== 'dean') { this._addHarass(st, 3, p.id, g.type); return; } // 进入类 = 骚扰+3
+    if (g.raid) { // 裁决#19：光屁股「翻墙取纸」——不骚扰、不逼出、不改变占用
+      if (st.occ && st.hasPaper && p.naked) { p.climbed = st.idx; this._ev('climbIn', { pid: p.id, idx: st.idx }); return; }
+      this._ev('raidFail', { pid: p.id, idx: st.idx }); return;
+    }
+    if (st.occ && st.occ !== 'dean') { this._addHarass(st, 3, p.id, g.type); return; } // 普通进入类 = 骚扰+3
     this._ev('pushEmpty', { pid: p.id, idx: g.target.idx });
   }
   _startRelief(p, kind) {
@@ -603,10 +634,19 @@ class Bot {
     }
     if (p.state === 'post' || p.naked) {
       if (p.state === 'post') { sim.queue(p.id, 'nakedOut'); return; } // 先光屁股出门
+      if (p.climbed >= 0) { // 已翻入：取纸 → 爬出
+        if (!p.hasClimbedPaper) sim.queue(p.id, 'takeClimbed', { idx: p.climbed });
+        else sim.queue(p.id, 'climbOut', { idx: p.climbed });
+        return;
+      }
       const paperRoom = sim.stalls.find(st2 => st2.hasPaper && !st2.occ && !st2.obstacle);
-      if (paperRoom) {
-        if (dist(p, paperRoom.doorPt) <= NUM.reach - 8) sim.queue(p.id, 'takePaper', { idx: paperRoom.idx });
-        else { const ax = paperRoom.doorPt.x - p.x, ay = paperRoom.doorPt.y - p.y, ad = Math.hypot(ax, ay) || 1; movePlayer(p, ax / ad, ay / ad, (10 / TICK)); }
+      const raidRoom = sim.stalls.find(st2 => st2.hasPaper && st2.occ && st2.occ !== 'dean' && !st2.obstacle);
+      const target = paperRoom || ((p.items.includes('ladder') || p.items.includes('wire')) ? raidRoom : null);
+      if (target) {
+        if (dist(p, target.doorPt) <= NUM.reach - 8) {
+          if (target === paperRoom) sim.queue(p.id, 'takePaper', { idx: target.idx });
+          else sim.queue(p.id, 'raidPaper', { idx: target.idx });
+        } else { const ax = target.doorPt.x - p.x, ay = target.doorPt.y - p.y, ad = Math.hypot(ax, ay) || 1; movePlayer(p, ax / ad, ay / ad, (10 / TICK)); }
         return;
       }
       if (dist(p, SINK) <= NUM.reach - 8) { sim.queue(p.id, 'wash'); return; }
@@ -742,7 +782,10 @@ if (typeof window !== 'undefined') (function () {
         case 'caught': banner('你被主任当场抓获……判负！', 'danger', 3); break;
         case 'postStuck': if (ev.pid === 0) showPostUI(true); float(p.x, p.y - 30, '没纸了！！光屁股出门找纸/洗手', '#fbbf24'); break;
         case 'nakedOut': { if (ev.pid === 0) showPostUI(false); float(p.x, p.y - 30, '光着屁股出来了！', '#f472b6'); addFx(p.x, p.y, 'smoke', '#fbcfe8', 10); banner('10s 内：去有纸隔间取纸 / 洗手台优雅结束', 'warn', 2.4); break; }
-        case 'paperGot': { float(p.x, p.y - 30, '取到纸！干净完成', '#86efac'); banner('体面人！', 'ok', 1.6); break; }
+        case 'paperGot': { float(p.x, p.y - 30, '取到纸！', '#86efac'); if (!p.hasClimbedPaper) banner('体面人！', 'ok', 1.6); break; }
+        case 'climbIn': { const st = sim.stalls[ev.idx]; float(st.doorPt.x, st.doorPt.y - 30, '翻进去了！别惊动里面', '#c084fc'); banner('梯子架好 → 取纸 → 原路爬出', 'warn', 2); break; }
+        case 'climbOut': { float(p.x, p.y - 30, '爬出来！干净完成', '#86efac'); banner('神不知鬼不觉', 'ok', 1.6); break; }
+        case 'raidFail': float(p.x, p.y - 40, '里面没纸/没人了…', '#fca5a5'); break;
         case 'washDone': { float(p.x, p.y - 30, '洗手！优雅结束(+5s)', '#a5f3fc'); banner('讲卫生 · 优雅结束', 'ok', 1.8); break; }
         case 'shout': float(p.x, p.y - 40, '谁有纸！！', '#fde047'); SND.noise(); break;
         case 'paperDone': banner(`${p.name} 递纸！人情+`, 'ok', 2); break;
@@ -839,11 +882,19 @@ if (typeof window !== 'undefined') (function () {
     float(you.x, you.y - 40, '没有可用消耗道具', '#d1d5db');
   }
   function doNakedInteract() {
+    if (you.climbed >= 0) {
+      if (!you.hasClimbedPaper) sim.queue(0, 'takeClimbed', { idx: you.climbed });
+      else sim.queue(0, 'climbOut', { idx: you.climbed });
+      return;
+    }
     let best = null, bd = 1e9;
     for (const st of sim.stalls) if (st.hasPaper && !st.occ && !st.obstacle) { const d = dist(you, st.doorPt); if (d < bd) { bd = d; best = st; } }
     if (best && bd <= NUM.reach) { sim.queue(0, 'takePaper', { idx: best.idx }); return; }
+    // 有人的有纸房：持梯子/铁丝直接翻入取纸（裁决#19：不骚扰不逼出）
+    const raid = sim.stalls.find(st => st.hasPaper && st.occ && st.occ !== 'dean' && !st.obstacle && dist(you, st.doorPt) <= NUM.reach);
+    if (raid && (you.items.includes('ladder') || you.items.includes('wire'))) { sim.queue(0, 'raidPaper', { idx: raid.idx }); return; }
     if (dist(you, SINK) <= NUM.reach) { sim.queue(0, 'wash'); return; }
-    float(you.x, you.y - 40, '找有纸的隔间或洗手台', '#fca5a5');
+    float(you.x, you.y - 40, '找有纸隔间(空房直接进/有人需梯子或铁丝)或洗手台', '#fca5a5');
   }
   function doFlushFake() {
     if (you.naked) { doNakedInteract(); return; }
@@ -978,7 +1029,7 @@ if (typeof window !== 'undefined') (function () {
           const g = p.charging, pr = clamp((sim.t - g.startT) / (g.resolveT - g.startT), 0, 1);
           ctx.fillStyle = '#00000044'; ctx.fillRect(x - 18, y - 36, 36, 5);
           ctx.fillStyle = '#a78bfa'; ctx.fillRect(x - 18, y - 36, 36 * pr, 5);
-          ctx.fillStyle = '#7c3aed'; ctx.font = '9px sans-serif'; ctx.fillText({ wire: '撬锁..', ladder: '翻墙..', poke: '捅..', bonk: '拍..', knock: '拍门..', sniff: '闻..', paper: '递纸..', clear: '疏通..', enterStall: '进入..', takePaper: '取纸..', wash: '洗手..' }[g.type] || g.type, x, y - 40);
+          ctx.fillStyle = '#7c3aed'; ctx.font = '9px sans-serif'; ctx.fillText({ wire: '撬锁..', ladder: '翻墙..', poke: '捅..', bonk: '拍..', knock: '拍门..', sniff: '闻..', paper: '递纸..', clear: '疏通..', enterStall: '进入..', takePaper: '取纸..', climbOut: '爬出..', wash: '洗手..' }[g.type] || g.type, x, y - 40);
         }
         if (p.charging && p.charging.push) {
           const pr = clamp((p.charging.pushUntil - sim.t) / NUM.guide.push, 0, 1);
@@ -1030,7 +1081,9 @@ if (typeof window !== 'undefined') (function () {
     if (you.state !== 'post' && postUI.style.display !== 'none') showPostUI(false);
     if (you.naked && you.post) {
       const left = Math.max(0, (you.post.autoAt - sim.t) / TICK).toFixed(1);
-      document.getElementById('skills').textContent = `🩲 光屁股 ${left}s：找纸(0s) / 洗手(+5s) / 超时(+8s)`;
+      document.getElementById('skills').textContent = you.climbed >= 0
+        ? `🪜 已翻入 ${left}s：${you.hasClimbedPaper ? '按 Q 原路爬出(0s)' : '按 Q 取纸'}`
+        : `🩲 光屁股 ${left}s：空房取纸(0s) / 梯子翻入有人的纸房 / 洗手(+5s) / 超时(+8s)`;
     }
     if (sim.phase === 'end') showEnd();
   }
@@ -1342,6 +1395,32 @@ if (typeof window === 'undefined' && process.argv[2] === 'test') (function () {
     step(c, NUM.post.autoBreak + 2);
     ok(R.final && R.final.kind === 'done', '超时应自动结束');
     ok(hasEv(c, 'final', e => e.pid === 0), '应有定型事件');
+  });
+
+  // T16：裁决#19 翻入有人的有纸隔间取纸（不骚扰、不逼出、占用不变）
+  T('翻入取纸：无骚扰/无逼出/爬出完成', () => {
+    const sim = mkSim(401); const A = sim.players[0], V = sim.players[1];
+    const st = sim.stalls[2]; st.obstacle = null; st.hasPaper = true;
+    st.occ = V; st.occKind = 'player'; st.occId++; V.atStall = 2; V.x = st.inPt.x; V.y = st.inPt.y; sim._startRelief(V, 'poop');
+    // A 进入光屁股态（用无纸隔间走一遍）
+    const s0 = sim.stalls[0]; s0.obstacle = null; s0.hasPaper = false; s0.occ = A; s0.occKind = 'player'; s0.occId++; A.atStall = 0;
+    sim._startRelief(A, 'poop'); A.relief.left = 1; sim.tick();
+    sim.queue(0, 'nakedOut'); sim.tick();
+    A.items.push('ladder'); A.x = st.doorPt.x; A.y = st.doorPt.y;
+    const occBefore = st.occ, harassBefore = st.harass, reliefLeftBefore = V.relief.left;
+    sim.queue(0, 'raidPaper', { idx: 2 });
+    step(sim, NUM.guide.ladder + NUM.guide.push + 2); // 翻墙 2s + 推门 2s
+    ok(A.climbed === 2, '应已翻入, climbed=' + A.climbed);
+    eq(st.occ, occBefore, '原占用者不受影响');
+    eq(st.harass, harassBefore, '不产生骚扰值');
+    eq(V.relief.left, reliefLeftBefore - (NUM.guide.ladder + NUM.guide.push + 2), '占用者排便进度正常推进（未被打断/逼出）');
+    ok(!A.final, '取纸前不定型');
+    sim.queue(0, 'takeClimbed', { idx: 2 }); step(sim, NUM.guide.takePaper + 2);
+    ok(A.hasClimbedPaper && st.hasPaper === false, '应取到纸');
+    ok(!A.final, '爬出前仍不定型');
+    sim.queue(0, 'climbOut', { idx: 2 }); step(sim, NUM.guide.climbOut + 2);
+    ok(A.final && A.final.kind === 'done', '爬出后干净完成');
+    eq(st.occ, V, '隔间仍归原占用者');
   });
 
   // T12：主任激怒 → 惩罚不判负、主任离场
