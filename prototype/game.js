@@ -49,7 +49,7 @@ const MAPS = [
       { x: 40, y: 160, w: 140, h: 500 },                // 西竖井（教室门落点，纵贯三路）
       { x: 180, y: 160, w: 1040, h: 100, id: 'rB', label: '道具路B', floor: 'floorB' },
       { x: 180, y: 360, w: 1040, h: 100, id: 'fast', label: '快速路', floor: 'floorFast' },
-      { x: 180, y: 560, w: 1040, h: 100, id: 'rA', label: '道具路A', floor: 'floorA' },
+      { x: 180, y: 560, w: 1040, h: 120, id: 'rA', label: '道具路A', floor: 'floorA' },
       { x: 1220, y: 160, w: 140, h: 500 },              // 东竖井（厕所门落点，纵贯三路）
     ] },
   { id: 2, name: '厕所', W: 1100, H: 760, floor: 'toilet', label: '厕所',
@@ -152,9 +152,11 @@ class Sim {
     let itemId = 1; this.items = [];
     const put = (kind, x, y) => this.items.push({ id: itemId++, kind, mapId: 2, x, y, taken: false });
     const put1 = (kind, x, y) => this.items.push({ id: itemId++, kind, mapId: 1, x, y, taken: false });
-    put1('mask', 450, 610); put1('mask', 700, 610); put1('wire', 900, 610); put1('paper', 1000, 610); put1('comic', 800, 610); put1('soda', 1100, 610);
-    put1('poster', 700, 410); // 快速路中点（顺手恶作剧）
-    put1('broom', 450, 210); put1('broom', 700, 210); put1('ladder', 900, 210); put1('plunger', 1000, 210); put1('paper', 1100, 210);
+    put1('mask', 700, 570); put1('mask', 700, 590); put1('wire', 700, 610);
+    put1('paper', 700, 630); put1('comic', 700, 650); put1('soda', 700, 670); // A 路：同一 x 并排 6 件
+    put1('poster', 700, 410); // 快速路中点（顺手恶作剧，单件不参与争抢）
+    put1('broom', 700, 170); put1('broom', 700, 195); put1('ladder', 700, 220);
+    put1('plunger', 700, 245); put1('paper', 700, 270); // B 路：同一 x 并排 5 件
     put('plunger', 950, 380); put('paper', 990, 380); // 洗手台旁（map2，put 默认）
 
     // 主任
@@ -814,6 +816,10 @@ class Bot {
 }
 
 /* ================= 浏览器端（渲染/输入/音频） ================= */
+let PFX = null; // pixelfx bundle（真实像素特效），异步加载；失败时降级
+if (typeof window !== 'undefined') {
+  import('./pixelfx-bundle.js').then(m => { PFX = m; }).catch(() => { PFX = null; });
+}
 if (typeof window !== 'undefined') (function () {
   const qs = new URLSearchParams(location.search);
   const seed = qs.has('seed') ? (parseInt(qs.get('seed')) >>> 0) : (Date.now() & 0x7fffffff);
@@ -826,6 +832,34 @@ if (typeof window !== 'undefined') (function () {
   const fx = []; const floats = []; const onomats = [];
   let audioOn = /Mobi|Android|iPhone/i.test(navigator.userAgent) ? false : true;
 
+  // ── pixelfx 真实特效池（画布上的一次成像，非几何占位）──
+  const pfxCache = document.createElement('canvas'); // 离屏 frame
+  const pfxItems = []; // {mod, opts, x, y, t, dur, fm, scale}
+  function spawnPfx(mod, x, y, opts = {}, fm = you.mapId, scale = 1.5) {
+    if (!PFX || !mod || !mod.meta) return false;
+    const W = Math.ceil(mod.meta.size[0] * scale), H = Math.ceil(mod.meta.size[1] * scale);
+    pfxItems.push({ mod, opts: { ...opts, x: Math.round(mod.meta.size[0] / 2), y: Math.round(mod.meta.size[1] / 2), seed: (sim.t * 7 + pfxItems.length) | 0 }, x, y, fm, W, H, scale, t: 0, dur: mod.meta.duration, frame: PFX.createFrame(mod.meta.size[0], mod.meta.size[1]), img: null, cv: document.createElement('canvas') });
+    return true;
+  }
+  function drawPfx(dt) {
+    if (!PFX) return;
+    for (let i = pfxItems.length - 1; i >= 0; i--) {
+      const it = pfxItems[i]; it.t += dt;
+      if (it.fm !== you.mapId) continue; // 跨图零可见
+      if (it.t >= it.dur) { pfxItems.splice(i, 1); continue; }
+      const inst = PFX.createFx(it.mod, it.opts);
+      inst.update(it.t);
+      PFX.clearFrame(it.frame);
+      inst.draw(it.frame, 'back'); inst.draw(it.frame, 'front');
+      if (!it.img) {
+        it.cv.width = it.mod.meta.size[0]; it.cv.height = it.mod.meta.size[1];
+        it.img = it.cv.getContext('2d').createImageData(it.cv.width, it.cv.height);
+      }
+      PFX.composite(it.frame, it.img.data, null);
+      it.cv.getContext('2d').putImageData(it.img, 0, 0);
+      ctx.drawImage(it.cv, Math.round(it.x - it.W / 2), Math.round(it.y - it.H / 2), it.W, it.H);
+    }
+  }
   function addFx(x, y, kind, color, n = 14) { for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, sp = 30 + Math.random() * 80; fx.push({ fm: curMapFx, x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.6 + Math.random() * 0.5, kind, color, rot: Math.random() * 6 }); } }
   function banner(txt, cls = '', dur = 2.4) {
     const host = document.getElementById('banners'); if (!host) return;
@@ -872,12 +906,14 @@ if (typeof window !== 'undefined') (function () {
           if (ev.kind === 'pre') { banner('上课预备铃！忍耐流失 ×1.5', 'warn', 2.5); SND.bell(); }
           if (ev.kind === 'soft') { banner('上课铃倒计时 45s！流失 ×3', 'danger', 3); SND.bell(); }
           break;
-        case 'deanIn': banner('！！主任来了！！', 'danger', 2.6); SND.deanIn(); break;
+        case 'deanIn': banner('！！主任来了！！', 'danger', 2.6); SND.deanIn(); if (PFX) spawnPfx(PFX.exclamation, 550, 300, { palette: ['#1a0e14', '#7f1d1d', '#dc2626', '#fca5a5', '#fff7ed'] }); break;
         case 'deanOut': banner('主任哼着歌走了~', 'ok', 2); SND.deanOut(); break;
         case 'deanAnger': banner(`${(sim.players[ev.pid] || {}).name || '?'} 被主任没收道具轰出厕所！`, 'warn', 2.5); addFx(1150, 320, 'smoke', '#b91c1c', 22); SND.anger(); break;
-        case 'harass': { const st = sim.stalls[ev.idx]; float(st.doorPt.x - 20, st.doorPt.y - 14, `骚扰 ${ev.val}/3`, '#fdba74'); SND.noise(); break; }
-        case 'evict': { const st = sim.stalls[ev.idx]; addFx(st.doorPt.x, st.doorPt.y - 20, 'launch', '#f97316', 20); float(st.doorPt.x, st.doorPt.y - 40, '被逼出来了！', '#fb923c'); SND.evict(); break; }
+        case 'harass': { const st = sim.stalls[ev.idx]; if (PFX) spawnPfx(PFX.hitSpark, st.doorPt.x, st.doorPt.y - 10, {}, 2, 0.8); float(st.doorPt.x - 20, st.doorPt.y - 14, `骚扰 ${ev.val}/3`, '#fdba74'); SND.noise(); break; }
+        case 'evict': { const st = sim.stalls[ev.idx]; if (PFX) spawnPfx(PFX.groundSlam, st.doorPt.x, st.doorPt.y + 30, {}, 2, 1.1); addFx(st.doorPt.x, st.doorPt.y - 20, 'launch', '#f97316', 20); float(st.doorPt.x, st.doorPt.y - 40, '被逼出来了！', '#fb923c'); SND.evict(); break; }
         case 'final':
+          if (ev.kind === 'blowout' && PFX) spawnPfx(PFX.cartoonPow, p.x, p.y, { text: 'CODE BROWN!', palette: ['#1a0e14', '#6e1a12', '#8d5a3a', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, p.mapId, 1.8);
+          if (ev.kind === 'done' && PFX) spawnPfx(PFX.confetti, p.x, p.y - 30, {}, p.mapId, 1.2);
           if (ev.kind === 'done') { addFx(p.x, p.y, 'confetti', '#4ade80', 24); float(p.x, p.y - 30, `${p.name} 完成！${ev.time.toFixed(1)}s`, '#86efac'); SND.done(); }
           if (ev.kind === 'blowout') { addFx(p.x, p.y, 'smoke', '#9ca3af', 30); float(p.x, p.y - 30, `${p.name} 炸裆！`, '#f87171'); SND.blowout(); }
           if (ev.kind === 'dead') { addFx(p.x, p.y, 'smoke', '#7f1d1d', 26); float(p.x, p.y - 30, `${p.name} 被主任抓获！`, '#fca5a5'); SND.caught(); }
@@ -892,16 +928,16 @@ if (typeof window !== 'undefined') (function () {
         case 'climbOut': { float(p.x, p.y - 30, '爬出来！干净完成', '#86efac'); banner('神不知鬼不觉', 'ok', 1.6); break; }
         case 'raidFail': float(p.x, p.y - 40, '里面没纸/没人了…', '#fca5a5'); break;
         case 'switchMap': if (ev.pid === 0) { banner(`🚪 进入【${MAPS[ev.to].name}】`, 'ok', 1.2); beep(150, .12, 'sine', .07); } break;
-        case 'punchHit': { const v = sim.players[ev.vid]; float(v.x, v.y - 26, `砰！(揍${ev.beaten}/8)`, '#fdba74'); onomat(v.x, v.y - 44, '砰！', PAL.onomat); addFx(v.x, v.y, 'ripple', '#fdba74', 6); beep(180, .08, 'square', .09); break; }
+        case 'punchHit': { const v = sim.players[ev.vid]; if (PFX) spawnPfx(PFX.cartoonPow, v.x, v.y - 16, { text: 'POW!', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, v.mapId, 0.9); float(v.x, v.y - 26, `砰！(揍${ev.beaten}/8)`, '#fdba74'); onomat(v.x, v.y - 44, '砰！', PAL.onomat); addFx(v.x, v.y, 'ripple', '#fdba74', 6); beep(180, .08, 'square', .09); break; }
         case 'punchMiss': float(p.x, p.y - 30, '挥空了…', '#d1d5db'); break;
-        case 'beatenOut': banner(`${(sim.players[ev.pid]||{}).name} 被打出屎了！！`, 'danger', 2.8); addFx(p.x, p.y, 'smoke', '#8d5a3a', 26); SND.blowout(); break;
+        case 'beatenOut': if (PFX) spawnPfx(PFX.cartoonPow, p.x, p.y, { text: 'K.O.!', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, p.mapId, 1.6); banner(`${(sim.players[ev.pid]||{}).name} 被打出屎了！！`, 'danger', 2.8); addFx(p.x, p.y, 'smoke', '#8d5a3a', 26); SND.blowout(); break;
         case 'washDone': { float(p.x, p.y - 30, '洗手！优雅结束(+5s)', '#a5f3fc'); banner('讲卫生 · 优雅结束', 'ok', 1.8); break; }
         case 'shout': float(p.x, p.y - 40, '谁有纸！！', '#fde047'); SND.noise(); break;
         case 'paperDone': banner(`${p.name} 递纸！人情+`, 'ok', 2); break;
         case 'pushStart': banner('推门中……听到动静可取消！(X)', 'warn', 2); beep(90, .3, 'sawtooth', .07); break;
         case 'pushCancel': banner('你缩回了手……保命要紧', 'ok', 1.6); break;
         case 'pushEmpty': float(1150, 400, '门后居然没人', '#ccc'); break;
-        case 'turbo': float(p.x, p.y - 30, '涡轮增压！！', '#f472b6'); SND.noise(); break;
+        case 'turbo': float(p.x, p.y - 30, '涡轮增压！！', '#f472b6'); SND.noise(); if (PFX) spawnPfx(PFX.chargeUp, p.x, p.y - 30, {}, 2, 1.2); break;
         case 'cleared': float(sim.stalls[ev.idx].doorPt.x, sim.stalls[ev.idx].doorPt.y - 30, '疏通！', '#a7f3d0'); break;
         case 'splash': float(p.x, p.y - 30, '溅了一身 -5', '#a16207'); break;
         case 'pick': float(p.x, p.y - 24, `+${ITEM_DEFS[ev.kind].name}`, '#e5e7eb'); SND.pick(); break;
@@ -1032,6 +1068,18 @@ if (typeof window !== 'undefined') (function () {
   function doInteract() {
     if (you.final || you.charging || you.state === 'relief' || you.state === 'post') return;
     if (you.naked) { doNakedInteract(); return; }
+    // 有人隔间：红门优先走既定闯入/骚扰流程，绝不"直接进"
+    let stNear = null, sd = 1e9;
+    for (const s2 of sim.stalls) { const d = dist(you, s2.doorPt); if (d < sd) { sd = d; stNear = s2; } }
+    if (stNear && sd <= NUM.reach && stNear.occ && !you.naked) {
+      if (stNear.occ !== 'dean' && stNear.occ.post && you.items.includes('paper')) { sim.queue(0, 'paper', { idx: stNear.idx }); return; }
+      if (you.items.includes('wire')) sim.queue(0, 'wire', { idx: stNear.idx });
+      else if (you.items.includes('ladder')) sim.queue(0, 'ladder', { idx: stNear.idx });
+      else if (you.items.includes('broom')) sim.queue(0, 'poke', { idx: stNear.idx });
+      else if (you.items.includes('plunger')) sim.queue(0, 'bonk', { idx: stNear.idx });
+      else sim.queue(0, 'knock', { idx: stNear.idx });
+      return;
+    }
     // 拾取
     let best = null, bd = 1e9;
     for (const it of sim.items) { if (it.taken) continue; const d = dist(you, it); if (d < bd) { bd = d; best = it; } }
@@ -1243,6 +1291,7 @@ if (typeof window !== 'undefined') (function () {
       ctx.lineWidth = 6; ctx.strokeStyle = PAL.onomatInk; ctx.strokeText(o.txt, 0, 0);
       ctx.fillStyle = o.color; ctx.fillText(o.txt, 0, 0); ctx.restore();
     }
+    drawPfx(dtSec || 0.016); // pixelfx 真特效（同图裁剪）
     if (sim.dean.active && you.mapId === 2) { ctx.fillStyle = PAL.deanFog + '22'; ctx.fillRect(cam.x - cv.width / 2, cam.y - cv.height / 2, cv.width, cv.height); }
     ctx.restore();
   }
@@ -1293,7 +1342,7 @@ if (typeof window !== 'undefined') (function () {
       acc -= TICK_MS / 1000;
       sim.t_internal = sim.t;
       // 你移动
-      if (sim.phase === 'run' && !you.final) {
+      if (!you.final) { // 备战阶段同样可自由移动（铃前出口被老师堵住）
         let vx = 0, vy = 0;
         if (keys['w'] || keys['arrowup']) vy -= 1;
         if (keys['s'] || keys['arrowdown']) vy += 1;
