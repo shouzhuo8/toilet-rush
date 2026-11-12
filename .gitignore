@@ -1,1 +1,3 @@
 refs/
+*.md
+!prototype/*.md

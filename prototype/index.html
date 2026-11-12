@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>课间特急：厕所攻防战 v0.1</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: #1a1812; font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; overflow: hidden; touch-action: none; }
+  #wrap { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+  /* 顶栏 */
+  #hud { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: #26221a; color: #eee; font-size: 14px; flex-wrap: wrap; }
+  #timer { font-weight: 900; font-size: 18px; min-width: 64px; color: #ffd93d; }
+  #dbf { font-weight: 700; }
+  .barwrap { flex: 1 1 120px; max-width: 240px; display: flex; align-items: center; gap: 6px; }
+  #ebarbg { flex: 1; height: 14px; background: #00000055; border-radius: 7px; overflow: hidden; border: 1px solid #ffffff33; }
+  #ebar { height: 100%; width: 100%; background: #4ade80; transition: width .2s; }
+  #etxt { font-size: 12px; min-width: 26px; text-align: right; }
+  #items { display: flex; gap: 4px; flex-wrap: wrap; }
+  .itm { border: 1px solid #999; border-radius: 4px; padding: 1px 5px; font-size: 12px; color: #fff; background: #00000044; }
+  #skills { font-size: 12px; color: #c7f9ff; }
+  /* 画布 */
+  #cvwrap { flex: 1 1 auto; position: relative; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  #cv { background: #2b2620; max-width: 100%; max-height: 100%; width: auto; height: auto; aspect-ratio: 1500/620; }
+  /* 横幅 */
+  #banners { position: absolute; top: 8px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+  .banner { padding: 6px 18px; border-radius: 8px; font-weight: 900; font-size: 18px; background: #000000aa; animation: pop .25s; text-align: center; }
+  .banner.big { color: #ffd93d; font-size: 24px; }
+  .banner.ok { color: #86efac; } .banner.warn { color: #fbbf24; } .banner.danger { color: #fca5a5; border: 2px solid #ef4444; }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } }
+  /* 触屏控件 */
+  #touch { flex: 0 0 auto; position: absolute; inset: 0; pointer-events: none; display: none; }
+  body.touch #touch { display: block; }
+  #joy { position: absolute; left: 18px; bottom: 18px; width: 128px; height: 128px; border-radius: 50%; background: #ffffff14; border: 2px solid #ffffff2e; pointer-events: auto; }
+  #knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: #ffffff33; border: 2px solid #ffffff55; }
+  .abtn { position: absolute; width: 64px; height: 64px; border-radius: 50%; border: 2px solid #ffffff44; background: #ffffff1c; color: #fff; font-weight: 900; font-size: 15px; pointer-events: auto; }
+  .abtn:active { background: #ffffff45; }
+  #btnQ { right: 108px; bottom: 96px; } #btnE { right: 30px; bottom: 122px; } #btnF { right: 30px; bottom: 40px; }
+  #btnX { right: 108px; bottom: 24px; width: 52px; height: 52px; background: #ef444433; }
+  #btnRun { position: absolute; left: 160px; bottom: 30px; width: 56px; height: 40px; border-radius: 8px; border: 2px solid #ffffff44; background: #ffffff1c; color: #fff; font-weight: 900; pointer-events: auto; }
+  /* POST 弹窗 */
+  #postUI { display: none; position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%); gap: 14px; z-index: 30; }
+  #postUI button { padding: 16px 22px; font-size: 18px; font-weight: 900; border-radius: 12px; border: none; cursor: pointer; }
+  #btnShout { background: #fbbf24; } #btnBreak { background: #f87171; color: #fff; }
+  /* 结算 */
+  #endUI { display: none; position: absolute; inset: 0; background: #000000c9; z-index: 40; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
+  #endUI h1 { font-size: 30px; margin-bottom: 16px; color: #ffd93d; }
+  #boards { display: flex; gap: 28px; flex-wrap: wrap; justify-content: center; max-width: 90%; }
+  .board { background: #ffffff10; border-radius: 12px; padding: 14px 22px; min-width: 210px; }
+  .board h3 { margin-bottom: 8px; }
+  .row { padding: 3px 0; font-size: 15px; }
+  .row.me { color: #ffd93d; font-weight: 900; }
+  #btnAgain { margin-top: 20px; padding: 12px 36px; font-size: 17px; font-weight: 900; background: #ffd93d; border: none; border-radius: 10px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <div id="timer">--</div>
+    <div id="dbf">--</div>
+    <div class="barwrap"><div id="ebarbg"><div id="ebar"></div></div><div id="etxt">100</div></div>
+    <div id="items"></div>
+    <div id="skills"></div>
+  </div>
+  <div id="cvwrap">
+    <canvas id="cv" width="1500" height="620"></canvas>
+    <div id="banners"></div>
+    <div id="postUI">
+      <button id="btnShout">📢 喊话要纸！</button>
+      <button id="btnBreak">💩 破罐破摔(+5s)</button>
+    </div>
+    <div id="touch">
+      <div id="joy"><div id="knob"></div></div>
+      <button id="btnRun">走</button>
+      <button class="abtn" id="btnQ">交互</button>
+      <button class="abtn" id="btnE">技能</button>
+      <button class="abtn" id="btnF">道具</button>
+      <button class="abtn" id="btnX">取消</button>
+    </div>
+    <div id="endUI">
+      <h1>下课结束！</h1>
+      <div id="boards"></div>
+      <button id="btnAgain">再来一局</button>
+    </div>
+  </div>
+</div>
+<script src="game.js"></script>
+<script>
+  // banners 由 game.js 通过 DOM 注入
+  (function () {
+    if (!window.addEventListener) return;
+    const orig = Element.prototype.animate;
+    const bn = document.getElementById('banners');
+    // game.js 内 banner() 会调用——此处提供全局挂载点
+    window.__bannerHost = bn;
+    const mo = new MutationObserver(() => {});
+    mo.observe(bn, { childList: true });
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) document.body.classList.add('touch');
+    window.addEventListener('keydown', function (e) {
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key.toLowerCase())) e.preventDefault();
+    });
+  })();
+</script>
+</body>
+</html>
