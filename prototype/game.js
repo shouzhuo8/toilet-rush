@@ -14,7 +14,7 @@ const NUM = {
   speed: { run: 60, walk: 43, sneak: 21.6 }, // px/s（≈12px/m）
   relief: { poop: s(14) },
   turboSave: s(5), comicSave: s(2),
-  guide: { wire: s(1.2), ladder: s(2), poke: s(1.5), bonk: s(0.5), knock: s(1.5),
+  guide: { wire: s(1.2), ladder: s(2), poke: s(1.5), bonk: s(0.5), knock: s(1.5), wash: s(1.5), takePaper: s(0.5),
            sniff: s(1.5), paper: s(1.5), clearPA: s(3), clearPB: s(5), clearBA: s(8),
            push: s(2), enter: s(0.5) },
   cd: { pokeDoor: s(3), knock: s(10), knockAbort: s(5), reenter: s(3) },
@@ -24,7 +24,7 @@ const NUM = {
   dean: { prob: 0.6, spawnMin: s(20), spawnMax: s(55), stayMin: s(10), stayMax: s(20), anger: 0.30 },
   stall: { obstacle: 0.35, paper: 0.70 },
   bells: { pre: s(90), preMult: 1.5, cap: s(180), softAt: 3, softT: s(45), softMult: 3 },
-  post: { autoBreak: s(10), penalty: s(5) },
+  post: { autoBreak: s(10), penalty: s(5), autoPenalty: s(8), washPenalty: s(5), nakedMult: 0.6, washGuide: s(1.5), takePaper: s(0.5) },
   sniff: { errBare: 0.10, errMask: 0.15, infect: 0.45, rate: 0.30, range: 52 },
   soda: { dur: s(20), mult: 0.5 },
   splash: { broom: 0.30, dmg: 5 },
@@ -113,6 +113,7 @@ class Sim {
       state: 'idle', // idle|relief|post|stagger —— FINAL 由 final 字段表达
       relief: null, // {kind,total,left}
       post: null, // {shouted, autoAt}
+      naked: false, // 光屁股移动态（裁决#18）：可去有纸隔间取纸 / 洗手台优雅结束
       final: null, // {kind:'done'|'blowout'|'dead', time}
       staggerUntil: 0, armorUntil: 0, rageUntil: 0, immuneUntil: 0,
       drainBuffUntil: 0, sodaUntil: 0, reenterCDUntil: 0,
@@ -257,8 +258,8 @@ class Sim {
         p.relief.left--;
         if (p.relief.left <= 0) this._reliefDone(p);
       }
-      // POST 挂起超时
-      if (p.state === 'post' && p.post && !p.post.hasPaper) {
+      // 挂起超时（含光屁股移动态）：10s 强制自动破罐 +8s
+      if (p.post && (p.state === 'post' || p.naked) && !p.post.hasPaper) {
         if (t >= p.post.autoAt) this._breakFinish(p, true);
       }
       // 骚扰值衰减
@@ -274,19 +275,34 @@ class Sim {
   _end() { if (this.phase !== 'end') { this.phase = 'end'; this._ev('gameEnd', {}); } }
 
   _reliefDone(p) {
-    if (p.relief.kind === 'poop') {
-      const st = this.stalls[p.atStall];
-      if (st && st.hasPaper) { st.hasPaper = false; this._finalize(p, 'done'); }
-      else { p.state = 'post'; p.post = { hasPaper: false, shouted: false, autoAt: this.t + NUM.post.autoBreak }; this._ev('postStuck', { pid: p.id }); }
-    } else this._finalize(p, 'done');
+    const st = this.stalls[p.atStall];
+    if (st && st.hasPaper) { st.hasPaper = false; this._finalize(p, 'done'); }
+    else { p.state = 'post'; p.post = { hasPaper: false, shouted: false, autoAt: this.t + NUM.post.autoBreak }; this._ev('postStuck', { pid: p.id }); }
   }
   _breakFinish(p, auto) {
     if (!p.post) return;
-    p.post = null; this._finalize(p, 'done', NUM.post.penalty);
+    p.post = null; this._finalize(p, 'done', auto ? NUM.post.autoPenalty : NUM.post.penalty);
+  }
+  // 裁决#18：光着屁股出门（离开隔间、进入移动态；10s 倒计时继续）
+  _goNaked(p) {
+    if (p.state !== 'post' || !p.post) return;
+    if (p.atStall >= 0) {
+      const st = this.stalls[p.atStall];
+      if (st.occ === p) { st.occ = null; st.occKind = null; st.occId++; st.harass = 0; this.clearFake(st); }
+      p.x = st.doorPt.x; p.y = st.doorPt.y - 8; p.atStall = -1;
+    }
+    p.state = 'idle'; p.naked = true; p.relief = null;
+    this._ev('nakedOut', { pid: p.id });
+  }
+  _cleanFinish(p, how, penalty = 0) { // how: 'paper' | 'wash'
+    if (!p.naked && p.state !== 'post') return;
+    p.post = null; p.naked = false;
+    this._ev(how === 'wash' ? 'washDone' : 'paperGot', { pid: p.id });
+    this._finalize(p, 'done', penalty);
   }
   _finalize(p, kind, penalty = 0) {
     if (p.final) return;
-    p.charging = null; p.state = 'idle'; p.relief = null; p.post = null;
+    p.charging = null; p.state = 'idle'; p.relief = null; p.post = null; p.naked = false;
     if (p.atStall >= 0) { const st = this.stalls[p.atStall]; if (st.occ === p) { st.occ = null; st.occKind = null; st.occId++; st.harass = 0; this.clearFake(st); } p.atStall = -1; }
     p.final = { kind, time: kind === 'done' ? Math.max(0.05, (this.t - this.bellT) / TICK + penalty / TICK) : (this.t - this.bellT) / TICK };
     this.finalCount++;
@@ -411,6 +427,22 @@ class Sim {
         this._ev('shout', { pid: p.id }); this._noise(p.x, p.y, 'shout'); return;
       }
       case 'break': { if (p.state === 'post') this._breakFinish(p, false); return; }
+      case 'nakedOut': { if (p.state === 'post') this._goNaked(p); return; }
+      case 'takePaper': {
+        if (!p.naked || !st) return fail('cond');
+        if (dist(p, st.doorPt) > (inToilet(p) ? NUM.reach : NUM.actR + 26)) return fail('far');
+        if (!st.hasPaper) return fail('nopaper');
+        if (st.occ || st.obstacle) return fail('occupied');
+        if (st.lockBy >= 0 && st.lockBy !== p.id && this.t < st.lockUntil) return fail('lock');
+        this._startGuide(p, { type: 'takePaper', dur: NUM.guide.takePaper, target: tg, occId: st.occId });
+        return;
+      }
+      case 'wash': {
+        if (!p.naked) return fail('cond');
+        if (dist(p, SINK) > (inToilet(p) ? NUM.reach : NUM.actR + 26)) return fail('far');
+        this._startGuide(p, { type: 'wash', dur: NUM.guide.wash, target: { kind: 'sink' } });
+        return;
+      }
     }
   }
 
@@ -464,6 +496,12 @@ class Sim {
         if (!p.final) { p.endurance = Math.min(100, p.endurance + 10); } // 未定型：人情回血
         this._ev('paperDone', { pid: p.id, vid: occ.id }); return;
       }
+      case 'takePaper': {
+        if (!st || !st.hasPaper || st.occ || st.obstacle) { this._ev('intentFail', { pid: p.id, why: 'target', act: 'takePaper' }); return; }
+        st.hasPaper = false; this.clearFake(st);
+        this._cleanFinish(p, 'paper'); return;
+      }
+      case 'wash': { this._cleanFinish(p, 'wash', NUM.post.washPenalty); return; }
       case 'clear': {
         const kind = g.clearKind; if (kind === 'plunger') this._consume(p, 'plunger'); else this._consume(p, 'broom');
         st.obstacle = null; this.clearFake(st);
@@ -531,6 +569,7 @@ function movePlayer(p, vx, vy, dt) {
   if (p.charging) return; // 引导中不可移动（取消才行）
   if (p.staggerUntil > 0 && p._simT < p.staggerUntil) return;
   let sp = NUM.speed[p.moveMode] || NUM.speed.walk;
+  if (p.naked) sp *= NUM.post.nakedMult; // 光屁股夹着走
   if (p.endurance < 30) sp *= 0.85; // 夹腿
   const nx = p.x + vx * sp * dt, ny = p.y + vy * sp * dt;
   if (walkable(nx, p.y)) p.x = nx;
@@ -562,9 +601,17 @@ class Bot {
       if (p.debuff === 'poo' && p.turboLeft > 0 && (p.relief.left > s(5) || p.endurance < 45)) sim.queue(p.id, 'turbo');
       return;
     }
-    if (p.state === 'post') {
-      if (p.post.shouted && sim.rng() < 0.4) sim.queue(p.id, 'break');
-      else sim.queue(p.id, 'shout');
+    if (p.state === 'post' || p.naked) {
+      if (p.state === 'post') { sim.queue(p.id, 'nakedOut'); return; } // 先光屁股出门
+      const paperRoom = sim.stalls.find(st2 => st2.hasPaper && !st2.occ && !st2.obstacle);
+      if (paperRoom) {
+        if (dist(p, paperRoom.doorPt) <= NUM.reach - 8) sim.queue(p.id, 'takePaper', { idx: paperRoom.idx });
+        else { const ax = paperRoom.doorPt.x - p.x, ay = paperRoom.doorPt.y - p.y, ad = Math.hypot(ax, ay) || 1; movePlayer(p, ax / ad, ay / ad, (10 / TICK)); }
+        return;
+      }
+      if (dist(p, SINK) <= NUM.reach - 8) { sim.queue(p.id, 'wash'); return; }
+      const ax = SINK.x - p.x, ay = SINK.y - p.y, ad = Math.hypot(ax, ay) || 1;
+      movePlayer(p, ax / ad, ay / ad, (10 / TICK));
       return;
     }
     // 在厕所：找位置/行动
@@ -693,7 +740,10 @@ if (typeof window !== 'undefined') (function () {
         case 'sniffResult': { const st = sim.stalls[ev.idx]; const m = { none: '没味儿~', player: '有人！(玩家)', dean: '主任？！' }; float(st.doorPt.x - 24, st.doorPt.y - 30, `👃${m[ev.show]}`, '#a5f3fc'); beep(520, .12, 'sine', .06); break; }
         case 'infect': float(p.x, p.y - 40, `被传染 -${ev.loss.toFixed(0)}`, '#a3e635'); break;
         case 'caught': banner('你被主任当场抓获……判负！', 'danger', 3); break;
-        case 'postStuck': if (ev.pid === 0) showPostUI(true); float(p.x, p.y - 30, '没纸了！！', '#fbbf24'); break;
+        case 'postStuck': if (ev.pid === 0) showPostUI(true); float(p.x, p.y - 30, '没纸了！！光屁股出门找纸/洗手', '#fbbf24'); break;
+        case 'nakedOut': { if (ev.pid === 0) showPostUI(false); float(p.x, p.y - 30, '光着屁股出来了！', '#f472b6'); addFx(p.x, p.y, 'smoke', '#fbcfe8', 10); banner('10s 内：去有纸隔间取纸 / 洗手台优雅结束', 'warn', 2.4); break; }
+        case 'paperGot': { float(p.x, p.y - 30, '取到纸！干净完成', '#86efac'); banner('体面人！', 'ok', 1.6); break; }
+        case 'washDone': { float(p.x, p.y - 30, '洗手！优雅结束(+5s)', '#a5f3fc'); banner('讲卫生 · 优雅结束', 'ok', 1.8); break; }
         case 'shout': float(p.x, p.y - 40, '谁有纸！！', '#fde047'); SND.noise(); break;
         case 'paperDone': banner(`${p.name} 递纸！人情+`, 'ok', 2); break;
         case 'pushStart': banner('推门中……听到动静可取消！(X)', 'warn', 2); beep(90, .3, 'sawtooth', .07); break;
@@ -732,6 +782,7 @@ if (typeof window !== 'undefined') (function () {
     if (k === 'x' || k === 'escape') doCancel();
     if (k === '1' && you.state === 'post') sim.queue(0, 'shout');
     if (k === '2' && you.state === 'post') sim.queue(0, 'break');
+    if (k === '3' && you.state === 'post') { sim.queue(0, 'nakedOut'); showPostUI(false); }
   });
   window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
@@ -787,7 +838,15 @@ if (typeof window !== 'undefined') (function () {
     }
     float(you.x, you.y - 40, '没有可用消耗道具', '#d1d5db');
   }
+  function doNakedInteract() {
+    let best = null, bd = 1e9;
+    for (const st of sim.stalls) if (st.hasPaper && !st.occ && !st.obstacle) { const d = dist(you, st.doorPt); if (d < bd) { bd = d; best = st; } }
+    if (best && bd <= NUM.reach) { sim.queue(0, 'takePaper', { idx: best.idx }); return; }
+    if (dist(you, SINK) <= NUM.reach) { sim.queue(0, 'wash'); return; }
+    float(you.x, you.y - 40, '找有纸的隔间或洗手台', '#fca5a5');
+  }
   function doFlushFake() {
+    if (you.naked) { doNakedInteract(); return; }
     let best = null, bd = 1e9;
     for (const st of sim.stalls) { const d = dist(you, st.doorPt); if (d < bd) { bd = d; best = st; } }
     if (best && bd <= NUM.reach) sim.queue(0, 'flushFake', { idx: best.idx });
@@ -803,6 +862,7 @@ if (typeof window !== 'undefined') (function () {
   }
   function doInteract() {
     if (you.final || you.charging || you.state === 'relief' || you.state === 'post') return;
+    if (you.naked) { doNakedInteract(); return; }
     // 拾取
     let best = null, bd = 1e9;
     for (const it of sim.items) { if (it.taken) continue; const d = dist(you, it); if (d < bd) { bd = d; best = it; } }
@@ -830,8 +890,14 @@ if (typeof window !== 'undefined') (function () {
   /* ---- POST UI ---- */
   const postUI = document.getElementById('postUI');
   function showPostUI(show) { postUI.style.display = show ? 'flex' : 'none'; }
-  document.getElementById('btnShout').addEventListener('click', () => { sim.queue(0, 'shout'); showPostUI(false); });
-  document.getElementById('btnBreak').addEventListener('click', () => { sim.queue(0, 'break'); showPostUI(false); });
+  const bindPost = (id, act) => {
+    const el = document.getElementById(id); let fired = false;
+    el.addEventListener('touchend', e => { e.preventDefault(); fired = true; sim.queue(0, act); showPostUI(false); }, { passive: false });
+    el.addEventListener('click', e => { if (fired) { fired = false; return; } sim.queue(0, act); showPostUI(false); });
+  };
+  bindPost('btnShout', 'shout');
+  bindPost('btnNaked', 'nakedOut');
+  bindPost('btnBreak', 'break');
 
   /* ---- 渲染 ---- */
   function draw(now) {
@@ -845,6 +911,10 @@ if (typeof window !== 'undefined') (function () {
     }
     // 厕所门缺口
     ctx.fillStyle = '#cfe8e4'; ctx.fillRect(1058, 290, 6, 62);
+    // 洗手台（裁决#18：光屁股优雅结束终点）
+    ctx.fillStyle = '#e2f1f4'; ctx.fillRect(SINK.x - 34, SINK.y - 12, 68, 24);
+    ctx.strokeStyle = '#7ba3b5'; ctx.lineWidth = 2; ctx.strokeRect(SINK.x - 34, SINK.y - 12, 68, 24);
+    ctx.fillStyle = '#1f1a17'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('洗手台', SINK.x, SINK.y + 3);
     // 隔间
     for (const st of sim.stalls) {
       ctx.fillStyle = PAL.toiletDark; ctx.fillRect(st.x, st.y, st.w, st.h);
@@ -900,6 +970,7 @@ if (typeof window !== 'undefined') (function () {
         // 状态
         if (p.state === 'relief') { const pr = 1 - p.relief.left / p.relief.total; ctx.fillStyle = '#00000044'; ctx.fillRect(x - 18, y + 28, 36, 5); ctx.fillStyle = '#38bdf8'; ctx.fillRect(x - 18, y + 28, 36 * pr, 5); }
         if (p.state === 'post') { ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 10px sans-serif'; ctx.fillText('没纸!', x, y + 40); }
+        if (p.naked) { ctx.fillStyle = '#f472b6'; ctx.font = 'bold 10px sans-serif'; ctx.fillText('光屁股!', x, y + 40); ctx.fillStyle = 'rgba(251,207,232,0.55)'; ctx.fillRect(x - 9, y + 4, 18, 12); ctx.strokeStyle = '#f9a8d4'; ctx.strokeRect(x - 9, y + 4, 18, 12); }
         if (p.staggerUntil > sim.t) { ctx.fillStyle = '#f87171'; ctx.font = '10px sans-serif'; ctx.fillText('晕', x + 16, y - 12); }
         if (sim.t < p.armorUntil || sim.t < p.rageUntil) { ctx.strokeStyle = sim.t < p.rageUntil ? '#f97316' : '#38bdf8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 15, 0, 7); ctx.stroke(); }
         // 引导条
@@ -907,7 +978,7 @@ if (typeof window !== 'undefined') (function () {
           const g = p.charging, pr = clamp((sim.t - g.startT) / (g.resolveT - g.startT), 0, 1);
           ctx.fillStyle = '#00000044'; ctx.fillRect(x - 18, y - 36, 36, 5);
           ctx.fillStyle = '#a78bfa'; ctx.fillRect(x - 18, y - 36, 36 * pr, 5);
-          ctx.fillStyle = '#7c3aed'; ctx.font = '9px sans-serif'; ctx.fillText({ wire: '撬锁..', ladder: '翻墙..', poke: '捅..', bonk: '拍..', knock: '拍门..', sniff: '闻..', paper: '递纸..', clear: '疏通..', enterStall: '进入..' }[g.type] || g.type, x, y - 40);
+          ctx.fillStyle = '#7c3aed'; ctx.font = '9px sans-serif'; ctx.fillText({ wire: '撬锁..', ladder: '翻墙..', poke: '捅..', bonk: '拍..', knock: '拍门..', sniff: '闻..', paper: '递纸..', clear: '疏通..', enterStall: '进入..', takePaper: '取纸..', wash: '洗手..' }[g.type] || g.type, x, y - 40);
         }
         if (p.charging && p.charging.push) {
           const pr = clamp((p.charging.pushUntil - sim.t) / NUM.guide.push, 0, 1);
@@ -957,6 +1028,10 @@ if (typeof window !== 'undefined') (function () {
     document.getElementById('skills').textContent = `嗅闻${you.sniffLeft} ${you.debuff === 'poo' ? '涡轮' + you.turboLeft : ''}`;
     if (you.state === 'post' && you.post && !you.post.hasPaper && postUI.style.display === 'none' && !you.post.shouted) showPostUI(true);
     if (you.state !== 'post' && postUI.style.display !== 'none') showPostUI(false);
+    if (you.naked && you.post) {
+      const left = Math.max(0, (you.post.autoAt - sim.t) / TICK).toFixed(1);
+      document.getElementById('skills').textContent = `🩲 光屁股 ${left}s：找纸(0s) / 洗手(+5s) / 超时(+8s)`;
+    }
     if (sim.phase === 'end') showEnd();
   }
 
@@ -1231,6 +1306,42 @@ if (typeof window === 'undefined' && process.argv[2] === 'test') (function () {
     sim.queue(0, 'flushFake', { idx: 2 }); step(sim, 1);
     ok(hasEv(sim, 'flushFake', e => e.pid === 0 && e.truth === 'dean'), '操作者应收到主任真值（单播）');
     ok(!A.final, '冲水伪装不判负');
+  });
+
+  // T15：裁决#18 光屁股善后——取纸/洗手/超时三分支
+  T('光屁股善后：取纸=0s / 洗手=+5s / 超时=+8s', () => {
+    // 取纸：空的有纸房
+    const a = mkSim(301); const P = a.players[0];
+    const st0 = a.stalls[0], st1 = a.stalls[1];
+    st0.obstacle = null; st0.hasPaper = false; st1.obstacle = null; st1.hasPaper = true;
+    st0.occ = P; st0.occKind = 'player'; st0.occId++; P.atStall = 0; P.x = st0.inPt.x; P.y = st0.inPt.y;
+    a._startRelief(P, 'poop'); P.relief.left = 1;
+    a.tick(); // 进 POST
+    ok(P.state === 'post' && !P.final, '应卡在 POST');
+    a.queue(0, 'nakedOut'); a.tick();
+    ok(P.naked && P.atStall < 0, '应光屁股出门进入移动态');
+    P.x = st1.doorPt.x; P.y = st1.doorPt.y; // 走到有纸房
+    a.queue(0, 'takePaper', { idx: 1 }); a.tick();
+    step(a, NUM.guide.takePaper + 1); // 0.5s 引导
+    ok(P.final && P.final.kind === 'done', '取纸应干净完成');
+    eq(st1.hasPaper, false, '纸应被取走');
+    // 洗手：+5s
+    const b = mkSim(302); const Q = b.players[0];
+    const bs0 = b.stalls[0]; bs0.obstacle = null; bs0.hasPaper = false; bs0.occ = Q; bs0.occKind = 'player'; bs0.occId++; Q.atStall = 0;
+    b._startRelief(Q, 'poop'); Q.relief.left = 1;
+    b.tick(); b.queue(0, 'nakedOut'); b.tick();
+    Q.x = SINK.x; Q.y = SINK.y;
+    b.queue(0, 'wash'); b.tick(); step(b, NUM.guide.wash + 1);
+    ok(Q.final && Q.final.kind === 'done', '洗手应优雅结束');
+    ok(hasEv(b, 'washDone'), '应有洗手事件');
+    // 超时：+8s 自动破罐
+    const c = mkSim(303); const R = c.players[0];
+    const cs0 = c.stalls[0]; cs0.obstacle = null; cs0.hasPaper = false; cs0.occ = R; cs0.occKind = 'player'; cs0.occId++; R.atStall = 0;
+    c._startRelief(R, 'poop'); R.relief.left = 1;
+    c.tick(); c.queue(0, 'nakedOut'); c.tick();
+    step(c, NUM.post.autoBreak + 2);
+    ok(R.final && R.final.kind === 'done', '超时应自动结束');
+    ok(hasEv(c, 'final', e => e.pid === 0), '应有定型事件');
   });
 
   // T12：主任激怒 → 惩罚不判负、主任离场

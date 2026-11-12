@@ -39,7 +39,7 @@
   #btnX { right: 108px; bottom: 24px; width: 52px; height: 52px; background: #ef444433; }
   #btnRun { position: absolute; left: 160px; bottom: 30px; width: 56px; height: 40px; border-radius: 8px; border: 2px solid #ffffff44; background: #ffffff1c; color: #fff; font-weight: 900; pointer-events: auto; }
   /* POST 弹窗 */
-  #postUI { display: none; position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%); gap: 14px; z-index: 30; }
+  #postUI { display: none; position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%); gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 90%; z-index: 30; }
   #postUI button { padding: 16px 22px; font-size: 18px; font-weight: 900; border-radius: 12px; border: none; cursor: pointer; }
   #btnShout { background: #fbbf24; } #btnBreak { background: #f87171; color: #fff; }
   /* 结算 */
@@ -68,6 +68,7 @@
     <div id="banners"></div>
     <div id="postUI">
       <button id="btnShout">📢 喊话要纸！</button>
+      <button id="btnNaked">🩲 光屁股出门找纸/洗手</button>
       <button id="btnBreak">💩 破罐破摔(+5s)</button>
     </div>
     <div id="touch">
