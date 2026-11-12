@@ -9,27 +9,27 @@ const TICK = 20, TICK_MS = 1000 / TICK;
 const s = (sec) => Math.round(sec * TICK); // 秒 → tick
 
 const NUM = {
-  drain: { pee: 0.9, poo: 1.2 },
+  drain: { poo: 1.2 },
   runMult: 1.5, sneakMult: 0.5,
   speed: { run: 60, walk: 43, sneak: 21.6 }, // px/s（≈12px/m）
-  relief: { urinal: s(6), stallPee: s(12), poop: s(14) },
+  relief: { poop: s(14) },
   turboSave: s(5), comicSave: s(2),
   guide: { wire: s(1.2), ladder: s(2), poke: s(1.5), bonk: s(0.5), knock: s(1.5),
            sniff: s(1.5), paper: s(1.5), clearPA: s(3), clearPB: s(5), clearBA: s(8),
            push: s(2), enter: s(0.5) },
-  cd: { shove: s(8), pokeDoor: s(3), knock: s(10), knockAbort: s(5), reenter: s(3) },
+  cd: { pokeDoor: s(3), knock: s(10), knockAbort: s(5), reenter: s(3) },
   harass: { need: 3, decay: s(6) },
-  prot: { superarmor: s(2), rage: s(10), evictImmune: s(10), lock: s(2),
+  prot: { evictImmune: s(10), lock: s(2),
           staggerS: s(1.5), staggerL: s(2), evictDrain: s(5) },
   dean: { prob: 0.6, spawnMin: s(20), spawnMax: s(55), stayMin: s(10), stayMax: s(20), anger: 0.30 },
   stall: { obstacle: 0.35, paper: 0.70 },
   bells: { pre: s(90), preMult: 1.5, cap: s(180), softAt: 3, softT: s(45), softMult: 3 },
   post: { autoBreak: s(10), penalty: s(5) },
   sniff: { errBare: 0.10, errMask: 0.15, infect: 0.45, rate: 0.30, range: 52 },
-  shoveMax: 3, soda: { dur: s(20), mult: 0.5 },
+  soda: { dur: s(20), mult: 0.5 },
   splash: { broom: 0.30, dmg: 5 },
   actR: 48, pickR: 26, // 基础交互/拾取半径
-  reach: 170, // 厕所内跨区交互半径（入口→小便池/隔间门；与 ARCH-13.2 的 L1 感知半径 15m 同量级）
+  reach: 170, // 厕所内跨区交互半径（入口→各隔间门；与 ARCH-13.2 的 L1 感知半径 15m 同量级）
 };
 
 /* ================= 工具 ================= */
@@ -50,8 +50,10 @@ const ROOMS = [
 function walkable(x, y) { for (const r of ROOMS) if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return true; return false; }
 function inToilet(p) { const r = ROOMS[6]; return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; }
 
-const URINALS = [{ x: 1150 }, { x: 1262 }, { x: 1374 }].map((u, i) => ({ idx: i, x: u.x, y: 150, doorY: 175, occ: null }));
-const STALLS = [{ x: 1120 }, { x: 1245 }, { x: 1370 }].map((u, i) => ({ idx: i, x: u.x, y: 440, w: 100, h: 90, doorPt: { x: u.x + 50, y: 415 }, inPt: { x: u.x + 50, y: 485 }, occ: null, occId: 0, occKind: null, obstacle: null, hasPaper: false, harass: 0, lastH: -9999, lockBy: -1, lockUntil: 0, fakeOcc: null, fakeUntil: 0 }));
+const STALLS = [
+  { x: 1090, y: 160 }, { x: 1200, y: 160 }, { x: 1310, y: 160 }, // 上排 3 间
+  { x: 1145, y: 440 }, { x: 1275, y: 440 },                       // 下排 2 间
+].map((u, i) => ({ idx: i, x: u.x, y: u.y, w: 100, h: 90, doorPt: { x: u.x + 50, y: u.y - 25 }, inPt: { x: u.x + 50, y: u.y + 45 }, occ: null, occId: 0, occKind: null, obstacle: null, hasPaper: false, harass: 0, lastH: -9999, lockBy: -1, lockUntil: 0, fakeOcc: null, fakeUntil: 0 }));
 const SINK = { x: 1085, y: 305 };
 const SPAWNS = [0, 1, 2, 3, 4].map(i => ({ x: 90 + i * 48, y: 320 }));
 const ROUTES = {
@@ -82,13 +84,13 @@ const PAL = {
 };
 // 四级视觉声呐（听障可玩性 / 音频情报冗余）：Ⅰ脚步 Ⅱ水流 Ⅲ战斗 Ⅳ主任
 const SONAR_LV = {
-  foot: 1, relief: 2, pee: 2, turbo: 2, shout: 2, flush: 2,
-  shove: 3, harass: 3, evict: 3, clear: 3, poster: 1,
+  foot: 1, relief: 2, turbo: 2, shout: 2, flush: 2,
+  harass: 3, evict: 3, clear: 3, poster: 1,
   deanIn: 4, deanAnger: 4, deanOut: 4,
 };
 // 拟声字包（P0-9）：事件 → 画面文字
 const ONOMAT = {
-  shove: '哐！', harass: '嗷！', evict: '出去！', turbo: '嗯嗯啊啊！', shout: '谁有纸！！',
+  harass: '嗷！', evict: '出去！', turbo: '嗯嗯啊啊！', shout: '谁有纸！！',
   flush: '哗——', clear: '噗通', deanIn: '……', deanAnger: '你，出来',
 };
 
@@ -101,14 +103,11 @@ class Sim {
     this.events = []; this.pending = []; this.iidSeq = 1;
     this.bellT = 0; this.lastShout = null;
 
-    // debuff 3+2 分配（裁决#1）
-    const peeCount = this.rng() < 0.5 ? 3 : 2;
-    const debuffs = []; for (let i = 0; i < 5; i++) debuffs.push(i < peeCount ? 'pee' : 'poo');
-    for (let i = debuffs.length - 1; i > 0; i--) { const j = (this.rng() * (i + 1)) | 0; [debuffs[i], debuffs[j]] = [debuffs[j], debuffs[i]]; }
+    // 全员"大肠翻滚"（v0.4：尿线已彻底删除）
     const NAMES = ['你', '王小明', '李铁蛋', '张翠花', '赵大宝'];
     const COLORS = ['#3aa0ff', '#ff6b6b', '#ffd93d', '#6bcb77', '#c084fc'];
     this.players = NAMES.map((n, i) => ({
-      id: i, name: n, color: COLORS[i], debuff: debuffs[i],
+      id: i, name: n, color: COLORS[i], debuff: 'poo',
       x: SPAWNS[i].x, y: SPAWNS[i].y, dir: 1,
       endurance: 100, moveMode: 'walk', sneaking: false,
       state: 'idle', // idle|relief|post|stagger —— FINAL 由 final 字段表达
@@ -117,25 +116,24 @@ class Sim {
       final: null, // {kind:'done'|'blowout'|'dead', time}
       staggerUntil: 0, armorUntil: 0, rageUntil: 0, immuneUntil: 0,
       drainBuffUntil: 0, sodaUntil: 0, reenterCDUntil: 0,
-      shoveCount: 0, items: [], sniffLeft: 1, turboLeft: 1,
+      items: [], sniffLeft: 1, turboLeft: 1,
       cds: {}, charging: null, bot: i > 0,
-      atStall: -1, atUrinal: -1,
+      atStall: -1,
     }));
 
     // 障碍 + 纸（裁决#4 保底 1 间）
     this.stalls = STALLS.map(() => null);
     const obRoll = STALLS.map(() => this.rng() < NUM.stall.obstacle);
-    if (!obRoll.some(v => v)) obRoll[(this.rng() * 3) | 0] = true;
+    if (!obRoll.some(v => v)) obRoll[(this.rng() * STALLS.length) | 0] = true;
     STALLS.forEach((st, i) => {
       this.stalls[i] = { ...st, obstacle: obRoll[i] ? (this.rng() < 0.5 ? 'anaconda' : 'berry') : null, hasPaper: this.rng() < NUM.stall.paper, fakeOcc: null, fakeUntil: 0 };
     });
-    this.urinals = URINALS.map(u => ({ ...u }));
 
     // 道具
     let itemId = 1; this.items = [];
     const put = (kind, x, y) => this.items.push({ id: itemId++, kind, x, y, taken: false });
     put('mask', 470, 500); put('mask', 560, 500); put('wire', 650, 500); put('paper', 740, 500); put('comic', 830, 500); put('soda', 920, 500);
-    put('poster', 1000, 310); // 快速路末端（裁决#16：尿玩家顺手恶作剧）
+    put('poster', 1000, 310); // 快速路末端（顺手恶作剧）
     put('broom', 470, 140); put('broom', 560, 140); put('ladder', 650, 140); put('plunger', 740, 140); put('paper', 830, 140);
     put('plunger', SINK.x, SINK.y); put('paper', SINK.x + 35, SINK.y);
 
@@ -251,7 +249,7 @@ class Sim {
         let mult = p.moveMode === 'run' ? NUM.runMult : p.moveMode === 'sneak' ? NUM.sneakMult : 1;
         if (t < p.sodaUntil) mult *= NUM.soda.mult;
         if (t < p.drainBuffUntil) mult *= 1.25;
-        p.endurance -= NUM.drain[p.debuff] * mult * this.G / TICK;
+        p.endurance -= NUM.drain.poo * mult * this.G / TICK;
         if (p.endurance <= 0) this._finalize(p, 'blowout');
       }
       // 排便进度
@@ -290,7 +288,6 @@ class Sim {
     if (p.final) return;
     p.charging = null; p.state = 'idle'; p.relief = null; p.post = null;
     if (p.atStall >= 0) { const st = this.stalls[p.atStall]; if (st.occ === p) { st.occ = null; st.occKind = null; st.occId++; st.harass = 0; this.clearFake(st); } p.atStall = -1; }
-    if (p.atUrinal >= 0) { const u = this.urinals[p.atUrinal]; if (u.occ === p) u.occ = null; p.atUrinal = -1; }
     p.final = { kind, time: kind === 'done' ? Math.max(0.05, (this.t - this.bellT) / TICK + penalty / TICK) : (this.t - this.bellT) / TICK };
     this.finalCount++;
     this._ev('final', { pid: p.id, kind, time: p.final.time });
@@ -334,26 +331,6 @@ class Sim {
         if (st.lockBy >= 0 && st.lockBy !== p.id && this.t < st.lockUntil) return fail('lock');
         this._startGuide(p, { type: 'enterStall', dur: NUM.guide.enter, target: tg, occId: st.occId });
         return;
-      }
-      case 'enterUrinal': {
-        const u = this.urinals[tg.idx]; if (!u || dist(p, { x: u.x, y: u.doorY }) > (inToilet(p) ? NUM.reach : NUM.actR + 20)) return fail('far');
-        if (u.occ) return fail('occupied');
-        this._startGuide(p, { type: 'enterUrinal', dur: NUM.guide.enter, target: { kind: 'urinal', idx: tg.idx } });
-        return;
-      }
-      case 'shove': {
-        const v = this.players[tg.id]; if (!v || v.final || v.atUrinal < 0) return fail('target');
-        if (dist(p, v) > (inToilet(p) ? NUM.reach : NUM.actR + 20)) return fail('far');
-        if (cdOf(`shove${v.id}`)) return fail('cd');
-        if (this.t < v.armorUntil || this.t < v.rageUntil) return fail('armor'); // C5：霸体内丢弃且 CD 不扣
-        p.cds[`shove${v.id}`] = this.t + NUM.cd.shove;
-        v.shoveCount++;
-        if (v.shoveCount > NUM.shoveMax) v.rageUntil = this.t + NUM.prot.rage;
-        v.armorUntil = this.t + NUM.prot.superarmor;
-        if (v.relief) { v.relief.left = v.relief.total; } // 进度清零
-        v.staggerUntil = this.t + NUM.prot.staggerS;
-        this._ev('shove', { pid: p.id, vid: v.id });
-        this._noise(v.x, v.y, 'shove'); return;
       }
       case 'poke': case 'bonk': case 'knock': {
         if (!st || !st.occ || dist(p, st.doorPt) > (inToilet(p) ? NUM.reach : NUM.actR + 26)) return fail('far');
@@ -423,7 +400,6 @@ class Sim {
           if (p.relief) p.relief.left = p.relief.total; // 进度清零
           p.post = null; p.state = 'idle'; p.reenterCDUntil = this.t + NUM.cd.reenter;
           if (p.atStall >= 0) { const st2 = this.stalls[p.atStall]; if (st2.occ === p) { st2.occ = null; st2.occKind = null; st2.occId++; st2.harass = 0; } p.x = st2.doorPt.x; p.y = st2.doorPt.y - 6; p.atStall = -1; }
-          if (p.atUrinal >= 0) { const u = this.urinals[p.atUrinal]; if (u.occ === p) u.occ = null; p.atUrinal = -1; p.y = u.doorY + 8; }
           this._ev('giveup', { pid: p.id });
         }
         return;
@@ -446,13 +422,8 @@ class Sim {
         if (!st || st.occ || st.obstacle || st.lockBy >= 0 && st.lockBy !== p.id && this.t < st.lockUntil) return this._ev('intentFail', { pid: p.id, why: 'occupied', act: g.type });
         st.occ = p; st.occKind = 'player'; st.occId++; st.harass = 0; this.clearFake(st); p.atStall = st.idx;
         p.x = st.inPt.x; p.y = st.inPt.y;
-        this._startRelief(p, p.debuff === 'poo' ? 'poop' : 'stallPee');
+        this._startRelief(p, 'poop');
         this._ev('enterStall', { pid: p.id, idx: st.idx }); return;
-      }
-      case 'enterUrinal': {
-        const u = this.urinals[g.target.idx]; if (u.occ) return this._ev('intentFail', { pid: p.id, why: 'occupied', type: g.type });
-        u.occ = p; p.atUrinal = u.idx; p.x = u.x; p.y = u.doorY;
-        this._startRelief(p, 'urinal'); this._ev('enterUrinal', { pid: p.id, idx: u.idx }); return;
       }
       case 'poke': case 'bonk': {
         this._consume(p, g.type === 'poke' ? 'broom' : 'plunger');
@@ -508,7 +479,7 @@ class Sim {
     this._ev('pushEmpty', { pid: p.id, idx: g.target.idx });
   }
   _startRelief(p, kind) {
-    let total = kind === 'urinal' ? NUM.relief.urinal : kind === 'stallPee' ? NUM.relief.stallPee : NUM.relief.poop;
+    let total = NUM.relief.poop;
     if (kind === 'poop' && p.items.includes('comic')) total -= NUM.comicSave;
     p.state = 'relief'; p.relief = { kind, total, left: total };
     this._ev('reliefStart', { pid: p.id, kind });
@@ -556,7 +527,7 @@ class Sim {
 
 /* ================= 移动（浏览器/AI 共用） ================= */
 function movePlayer(p, vx, vy, dt) {
-  if (p.final || p.atStall >= 0 || p.atUrinal >= 0 || p.charging && !p.charging.push && ['wire', 'ladder'].includes(p.charging.type)) return;
+  if (p.final || p.atStall >= 0 || p.charging && !p.charging.push && ['wire', 'ladder'].includes(p.charging.type)) return;
   if (p.charging) return; // 引导中不可移动（取消才行）
   if (p.staggerUntil > 0 && p._simT < p.staggerUntil) return;
   let sp = NUM.speed[p.moveMode] || NUM.speed.walk;
@@ -580,7 +551,7 @@ class Bot {
     }
     // 顺路捡道具
     for (const it of sim.items) {
-      if (it.taken || dist(p, it) > 30) continue;
+      if (it.taken || dist(p, it) > NUM.pickR - 2) continue;
       if (p.items.length >= 2) break;
       const want = (p.debuff === 'poo' && (it.kind === 'comic' || it.kind === 'paper')) ||
         (WEAPONS.has(it.kind) && !p.items.some(i => WEAPONS.has(i)) && (it.kind !== 'ladder' && it.kind !== 'wire' || sim.rng() < 0.6)) ||
@@ -599,22 +570,24 @@ class Bot {
     // 在厕所：找位置/行动
     if (inToilet(p)) {
       if (p.charging) return;
-      // 顺手贴假指示（骗后进厕所的人，20s 自动复原）
-      if (p.items.includes('poster') && sim.rng() < 0.15) { const st = sim.stalls[(sim.rng() * 3) | 0]; if (st) { sim.queue(p.id, 'poster', { idx: st.idx }); return; } }
-      // 小便优先
-      if (p.debuff === 'pee') {
-        const u = sim.urinals.find(u => !u.occ);
-        if (u) { sim.queue(p.id, 'enterUrinal', { idx: u.idx }); return; }
+      // 顺手贴假指示（低频，骗后进厕所的人）
+      if (p.items.includes('poster') && sim.rng() < 0.08) { const st = sim.stalls[(sim.rng() * sim.stalls.length) | 0]; if (st) { sim.queue(p.id, 'poster', { idx: st.idx }); return; } }
+      // 候选空房（含可清障房）：按距离排序，够近才交互，不够近就走过去
+      const cand = [];
+      for (const st of sim.stalls) {
+        if (st.occ) continue;
+        if (st.obstacle && !(p.items.includes('plunger') || (st.obstacle === 'anaconda' && p.items.includes('broom')))) continue;
+        if (st.lockBy >= 0 && st.lockBy !== p.id && sim.t < st.lockUntil) continue;
+        cand.push({ st, d: dist(p, st.doorPt) });
       }
-      const free = sim.stalls.find(st => !st.occ && !st.obstacle && !(st.lockBy >= 0 && st.lockBy !== p.id && sim.t < st.lockUntil));
-      if (free) {
-        sim.queue(p.id, 'enterStall', { idx: free.idx }); return;
+      cand.sort((a, b) => a.d - b.d);
+      const near = cand[0];
+      if (near && near.d <= NUM.reach - 8) {
+        sim.queue(p.id, near.st.obstacle ? 'clear' : 'enterStall', { idx: near.st.idx }); return;
       }
-      // 清障
-      const dirty = sim.stalls.find(st => st.obstacle && !st.occ);
-      if (dirty && (p.items.includes('plunger') || dirty.obstacle === 'anaconda' && p.items.includes('broom'))) { sim.queue(p.id, 'clear', { idx: dirty.idx }); return; }
-      // 红门处理
-      const red = sim.stalls.find(st => st.occ && st.idx !== this._myStall());
+      // 红门（有人）：只挑够近的
+      const reds = sim.stalls.filter(st => st.occ && st.idx !== this._myStall()).map(st => ({ st, d: dist(p, st.doorPt) })).sort((a, b) => a.d - b.d);
+      const red = reds[0] && reds[0].d <= NUM.reach - 8 ? reds[0].st : null;
       if (red) {
         const known = this.sniffInfo[red.idx];
         if (!known && p.sniffLeft > 0 && sim.rng() < 0.5) { sim.queue(p.id, 'sniff', { idx: red.idx }); return; }
@@ -625,14 +598,17 @@ class Bot {
           else sim.queue(p.id, 'knock', { idx: red.idx });
           return;
         }
-        if (info.show === 'dean') this.sniffInfo[red.idx] = { show: 'dean' }; // 记住别碰
       }
-      // 递纸（听到喊声）
-      if (sim.lastShout && sim.t < sim.lastShout.until && p.items.includes('paper') && sim.rng() < 0.5) {
+      // 递纸（听到喊声且够近）
+      if (sim.lastShout && sim.t < sim.lastShout.until && p.items.includes('paper')) {
         const st = sim.stalls[sim.lastShout.stall];
-        if (st && st.occ && st.occ.post && dist(p, st.doorPt) < NUM.actR + 26) { sim.queue(p.id, 'paper', { idx: st.idx }); return; }
+        if (st && st.occ && st.occ.post && dist(p, st.doorPt) <= NUM.reach - 8) { sim.queue(p.id, 'paper', { idx: st.idx }); return; }
       }
-      return; // 原地等
+      // 没有够近的目标 → 朝最近的空房门移动（全速，每 0.5s 一次 think）
+      const goal = near ? near.st.doorPt : reds.length ? reds[0].st.doorPt : { x: 1250, y: 320 };
+      const ax = goal.x - p.x, ay = goal.y - p.y, ad = Math.hypot(ax, ay) || 1;
+      if (ad > 12) movePlayer(p, ax / ad, ay / ad, (10 / TICK));
+      return;
     }
     // 赶路（含"最后一段进厕所"）：所有路径的终点都在厕所内部，wi 走完后继续补位到门内安全点
     const goal = (this.wps && this.wi < this.wps.length) ? this.wps[this.wi] : { x: 1090, y: 320 };
@@ -640,13 +616,6 @@ class Bot {
       if (dist(p, goal) < 14) { if (this.wps && this.wi < this.wps.length) { this.wi++; return; } }
       const dx = goal.x - p.x, dy = goal.y - p.y, d = Math.hypot(dx, dy) || 1;
       movePlayer(p, dx / d, dy / d, 0.5 * (10 / TICK));
-      // 到厕所后：若附近没有可用坑位，主动向隔间门/小便池靠拢（否则站在门口干等 → far 拒绝死循环）
-      if (inToilet(p)) {
-        let tgt = null, bd = 1e9;
-        for (const u of sim.urinals) if (!u.occ && p.debuff === 'pee') { const q = { x: u.x, y: u.doorY }, d2 = dist(p, q); if (d2 < bd) { bd = d2; tgt = q; } }
-        for (const st of sim.stalls) if (!st.occ && !st.obstacle) { const d2 = dist(p, st.doorPt); if (d2 < bd) { bd = d2; tgt = st.doorPt; } }
-        if (tgt && bd > 20) { const ax = tgt.x - p.x, ay = tgt.y - p.y, ad = Math.hypot(ax, ay) || 1; movePlayer(p, ax / ad, ay / ad, 0.5 * (10 / TICK)); }
-      }
     }
   }
   _myStall() { return this.p.atStall; }
@@ -692,7 +661,6 @@ if (typeof window !== 'undefined') (function () {
     bell: () => { beep(880, .35, 'square', .1); setTimeout(() => beep(1320, .4, 'square', .1), 180); },
     deanIn: () => { beep(140, .5, 'sawtooth', .12); setTimeout(() => beep(110, .6, 'sawtooth', .12), 250); },
     deanOut: () => beep(660, .3, 'sine', .08),
-    shove: () => beep(220, .12, 'square', .09),
     evict: () => { beep(180, .2, 'sawtooth', .1); setTimeout(() => beep(90, .3, 'sawtooth', .1), 120); },
     blowout: () => { beep(200, .6, 'sawtooth', .14); setTimeout(() => beep(120, .7, 'sawtooth', .12), 200); },
     done: () => { beep(784, .15, 'sine', .1); setTimeout(() => beep(1046, .25, 'sine', .1), 140); },
@@ -715,7 +683,6 @@ if (typeof window !== 'undefined') (function () {
         case 'deanIn': banner('！！主任来了！！', 'danger', 2.6); SND.deanIn(); break;
         case 'deanOut': banner('主任哼着歌走了~', 'ok', 2); SND.deanOut(); break;
         case 'deanAnger': banner(`${(sim.players[ev.pid] || {}).name || '?'} 被主任没收道具轰出厕所！`, 'warn', 2.5); addFx(1150, 320, 'smoke', '#b91c1c', 22); SND.anger(); break;
-        case 'shove': float(p.x, p.y - 20, '哎哟！', '#fca5a5'); SND.shove(); break;
         case 'harass': { const st = sim.stalls[ev.idx]; float(st.doorPt.x - 20, st.doorPt.y - 14, `骚扰 ${ev.val}/3`, '#fdba74'); SND.noise(); break; }
         case 'evict': { const st = sim.stalls[ev.idx]; addFx(st.doorPt.x, st.doorPt.y - 20, 'launch', '#f97316', 20); float(st.doorPt.x, st.doorPt.y - 40, '被逼出来了！', '#fb923c'); SND.evict(); break; }
         case 'final':
@@ -840,13 +807,6 @@ if (typeof window !== 'undefined') (function () {
     let best = null, bd = 1e9;
     for (const it of sim.items) { if (it.taken) continue; const d = dist(you, it); if (d < bd) { bd = d; best = it; } }
     if (best && bd <= NUM.pickR) { sim.queue(0, 'pick', { id: best.id }); return; }
-    // 小便池
-    for (const u of sim.urinals) {
-      if (dist(you, { x: u.x, y: u.doorY }) <= NUM.actR + 14) {
-        if (u.occ && u.occ !== you && !u.occ.final) { sim.queue(0, 'shove', { id: u.occ.id }); return; }
-        if (!u.occ && you.debuff === 'pee') { sim.queue(0, 'enterUrinal', { idx: u.idx }); return; }
-      }
-    }
     // 隔间
     let st = null; bd = 1e9;
     for (const s2 of sim.stalls) { const d = dist(you, s2.doorPt); if (d < bd) { bd = d; st = s2; } }
@@ -885,12 +845,6 @@ if (typeof window !== 'undefined') (function () {
     }
     // 厕所门缺口
     ctx.fillStyle = '#cfe8e4'; ctx.fillRect(1058, 290, 6, 62);
-    // 小便池
-    for (const u of sim.urinals) {
-      ctx.fillStyle = '#dbe9ee'; ctx.fillRect(u.x - 28, 112, 56, 34);
-      ctx.strokeStyle = '#7ba3b5'; ctx.strokeRect(u.x - 28, 112, 56, 34);
-      ctx.fillStyle = '#7ba3b5'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('池' + (u.idx + 1), u.x, 132);
-    }
     // 隔间
     for (const st of sim.stalls) {
       ctx.fillStyle = PAL.toiletDark; ctx.fillRect(st.x, st.y, st.w, st.h);
@@ -937,7 +891,7 @@ if (typeof window !== 'undefined') (function () {
         ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(x + p.dir * 3 - 2, y - 3, 1.6, 0, 7); ctx.arc(x + p.dir * 3 + 3, y - 3, 1.6, 0, 7); ctx.fill();
         // debuff 标记
         ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText(p.debuff === 'pee' ? '💧' : '💩', x, y + 24);
+        ctx.fillText('💩', x, y + 24);
         // 名字 + 忍耐
         ctx.fillStyle = '#111'; ctx.font = 'bold 11px sans-serif'; ctx.fillText(p.name + (p.endurance < 30 ? '(夹腿)' : ''), x, y - 26);
         const w = 30, e = clamp(p.endurance, 0, 100) / 100;
@@ -953,7 +907,7 @@ if (typeof window !== 'undefined') (function () {
           const g = p.charging, pr = clamp((sim.t - g.startT) / (g.resolveT - g.startT), 0, 1);
           ctx.fillStyle = '#00000044'; ctx.fillRect(x - 18, y - 36, 36, 5);
           ctx.fillStyle = '#a78bfa'; ctx.fillRect(x - 18, y - 36, 36 * pr, 5);
-          ctx.fillStyle = '#7c3aed'; ctx.font = '9px sans-serif'; ctx.fillText({ wire: '撬锁..', ladder: '翻墙..', poke: '捅..', bonk: '拍..', knock: '拍门..', sniff: '闻..', paper: '递纸..', clear: '疏通..', enterStall: '进入..', enterUrinal: '站位..' }[g.type] || g.type, x, y - 40);
+          ctx.fillStyle = '#7c3aed'; ctx.font = '9px sans-serif'; ctx.fillText({ wire: '撬锁..', ladder: '翻墙..', poke: '捅..', bonk: '拍..', knock: '拍门..', sniff: '闻..', paper: '递纸..', clear: '疏通..', enterStall: '进入..' }[g.type] || g.type, x, y - 40);
         }
         if (p.charging && p.charging.push) {
           const pr = clamp((p.charging.pushUntil - sim.t) / NUM.guide.push, 0, 1);
@@ -994,7 +948,7 @@ if (typeof window !== 'undefined') (function () {
 
   function updateHud() {
     document.getElementById('timer').textContent = sim.phase === 'prep' ? `准备 ${Math.ceil(sim.prepLeft / TICK)}s` : `${Math.max(0, Math.ceil((NUM.bells.cap - sim.t) / TICK))}s`;
-    document.getElementById('dbf').textContent = you.debuff === 'pee' ? '💧无尽尿意' : '💩大肠翻滚';
+    document.getElementById('dbf').textContent = '💩大肠翻滚';
     const eb = document.getElementById('ebar'); eb.style.width = clamp(you.endurance, 0, 100) + '%';
     eb.style.background = you.endurance > 50 ? '#4ade80' : you.endurance > 30 ? '#fbbf24' : '#ef4444';
     document.getElementById('etxt').textContent = Math.max(0, Math.ceil(you.endurance));
@@ -1009,8 +963,8 @@ if (typeof window !== 'undefined') (function () {
   function showEnd() {
     const ov = document.getElementById('endUI'); if (ov.style.display === 'flex') return;
     ov.style.display = 'flex';
-    const mk = (db) => {
-      const list = sim.players.filter(p => p.debuff === db).sort((a, b) => {
+    const mk = () => {
+      const list = sim.players.slice().sort((a, b) => {
         if (a.final.kind === 'done' && b.final.kind !== 'done') return -1;
         if (b.final.kind === 'done' && a.final.kind !== 'done') return 1;
         if (a.final.kind === 'done' && b.final.kind === 'done') return a.final.time - b.final.time;
@@ -1020,7 +974,7 @@ if (typeof window !== 'undefined') (function () {
       return list.map((p, i) => `<div class="row ${p.id === 0 ? 'me' : ''}">${medal[i] || ''} ${p.name} <b>${p.final.kind === 'done' ? p.final.time.toFixed(1) + 's' : p.final.kind === 'blowout' ? '炸裆' : '被抓'}</b></div>`).join('');
     };
     document.getElementById('boards').innerHTML =
-      `<div class="board"><h3>尿王榜 💧</h3>${mk('pee')}</div><div class="board"><h3>屎王榜 💩</h3>${mk('poo')}</div>`;
+      `<div class="board"><h3>💩 屎王榜 · 下课总排名</h3>${mk()}</div>`;
   }
   document.getElementById('btnAgain').addEventListener('click', () => location.reload());
 
@@ -1134,19 +1088,18 @@ if (typeof window === 'undefined' && process.argv[2] === 'test') (function () {
     eq(B.items.filter(i => i === 'paper').length, 1, 'B 的纸应退还');
   });
 
-  // T5 C5：霸体内推搡 → 丢弃且 CD 不扣
-  T('C5 霸体推搡CD不扣', () => {
-    const sim = mkSim(5); const A = sim.players[0], V = sim.players[1];
-    V.debuff = 'pee'; const u = sim.urinals[0]; u.occ = V; V.atUrinal = 0; V.x = u.x; V.y = u.doorY; sim._startRelief(V, 'urinal');
-    place(sim, 0, u.x - 30, u.doorY);
-    sim.queue(0, 'shove', { id: 1 }); step(sim, 2);
-    ok(V.shoveCount === 1, '第一次应命中');
-    V.armorUntil = sim.t + 40;
-    const cdBefore = sim.players[0].cds['shove1'];
-    sim.queue(0, 'shove', { id: 1 }); step(sim, 2);
-    eq(V.shoveCount, 1, '霸体期应丢弃');
-    eq(sim.players[0].cds['shove1'], cdBefore, '霸体拒绝不得刷新 CD');
-    ok(V.relief.left <= V.relief.total && V.relief.left > 0, '霸体期进度不应被清零');
+  // T5：尿线删除回归——不存在 enterUrinal/shove 意图
+  T('尿线已删除：无池位/无推搡意图', () => {
+    const sim = mkSim(5);
+    eq(sim.urinals, undefined, '不应存在 urinals');
+    ok(sim.players.every(p => p.debuff === 'poo'), '全员应为大肠翻滚');
+    eq(sim.stalls.length, 5, '应扩为 5 间隔间');
+    const A = sim.players[0], V = sim.players[1];
+    V.atStall = 0; sim.stalls[0].occ = V;
+    sim.queue(0, 'enterUrinal', { idx: 0 }); sim.queue(0, 'shove', { id: 1 });
+    step(sim, 2);
+    ok(!A.charging, '旧意图不应被受理');
+    eq(V.relief, null, '不应产生任何排便');
   });
 
   // T6 C6：逼出瞬间第三方在途引导 → 目标失效中断回滚
@@ -1171,7 +1124,7 @@ if (typeof window === 'undefined' && process.argv[2] === 'test') (function () {
     const sim = mkSim(7); const st = sim.stalls[0]; st.obstacle = null; st.occ = null;
     const A = sim.players[0];
     place(sim, 0, st.doorPt.x, st.doorPt.y);
-    sim.stalls[1].obstacle = 'berry'; sim.stalls[2].obstacle = 'anaconda'; // 主任唯一候选 = 0 号间
+    for (let i = 1; i < sim.stalls.length; i++) sim.stalls[i].obstacle = i % 2 ? 'berry' : 'anaconda'; // 主任唯一候选 = 0 号间
     sim.dean.active = false; sim.dean.planned = true; sim.dean.spawnAt = 31; // 与嗅闻 resolve 同刻
     sim.queue(0, 'sniff', { idx: 0 }); // t=1 startT=1 resolveT=31
     sim.tick(); step(sim, 30); // t=31：段① 主任入住(occId++) → 段② 嗅闻失效中断
