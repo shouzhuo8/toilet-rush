@@ -22,6 +22,18 @@
   /* 画布 */
   #cvwrap { flex: 1 1 auto; position: relative; display: flex; align-items: center; justify-content: center; min-height: 0; }
   #cv { background: #2b2620; max-width: 100%; max-height: 100%; width: auto; height: auto; aspect-ratio: 1500/620; image-rendering: pixelated; }
+  @media (orientation: portrait) {
+    #cv { aspect-ratio: 900/620; }
+    #hud { font-size: 12px; gap: 6px; padding: 4px 6px; }
+    #items, #skills { font-size: 11px; }
+    #joy { width: 108px; height: 108px; }
+    #knob { width: 44px; height: 44px; margin: -22px 0 0 -22px; }
+    .abtn { width: 56px; height: 56px; }
+    #btnP, #btnR { left: 132px; }
+    #btnRun { left: 132px; }
+    #portraitTip { display: block !important; }
+  }
+  #portraitTip { display: none; position: absolute; top: 44px; left: 50%; transform: translateX(-50%); color: #ffd93d; font-size: 12px; background: #000000aa; padding: 3px 10px; border-radius: 6px; pointer-events: none; z-index: 5; }
   /* 横幅 */
   #banners { position: absolute; top: 8px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
   .banner { padding: 6px 18px; border-radius: 8px; font-weight: 900; font-size: 18px; background: #000000aa; animation: pop .25s; text-align: center; }
@@ -65,6 +77,7 @@
   </div>
   <div id="cvwrap">
     <canvas id="cv" width="1500" height="620"></canvas>
+    <div id="portraitTip">横屏体验更佳 · Portrait mode</div>
     <div id="banners"></div>
     <div id="postUI">
       <button id="btnShout">📢 喊话要纸！</button>
@@ -88,6 +101,7 @@
     </div>
   </div>
 </div>
+<script src="/client/game/art.js"></script>
 <script src="/client/game/game.js"></script>
 <script>
   // banners 由 game.js 通过 DOM 注入

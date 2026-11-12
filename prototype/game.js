@@ -42,18 +42,18 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
  * map0 教室(900×620) / map1 教室外-三平行走廊(1800×620) / map2 厕所(1100×760)
  * 跨图零可见；连接口自动切图；摄像机跟随。 */
 const MAPS = [
-  { id: 0, name: '教室', W: 900, H: 620, floor: 'floorClass', label: '教室',
-    rooms: [{ x: 60, y: 140, w: 780, h: 340 }] },
-  { id: 1, name: '教室外', W: 1500, H: 820, floor: 'floorFast', label: '走廊',
+  { id: 0, name: '教室', W: 1800, H: 1100, floor: 'floorClass', label: '教室',
+    rooms: [{ x: 60, y: 140, w: 1680, h: 820 }] },
+  { id: 1, name: '教室外', W: 2400, H: 1200, floor: 'floorFast', label: '走廊',
     rooms: [
-      { x: 40, y: 160, w: 140, h: 500 },                // 西竖井（教室门落点，纵贯三路）
-      { x: 180, y: 160, w: 1040, h: 100, id: 'rB', label: '道具路B', floor: 'floorB' },
-      { x: 180, y: 360, w: 1040, h: 100, id: 'fast', label: '快速路', floor: 'floorFast' },
-      { x: 180, y: 560, w: 1040, h: 120, id: 'rA', label: '道具路A', floor: 'floorA' },
-      { x: 1220, y: 160, w: 140, h: 500 },              // 东竖井（厕所门落点，纵贯三路）
+      { x: 40, y: 160, w: 140, h: 920 },                // 西竖井（教室门落点，纵贯三路）
+      { x: 180, y: 160, w: 2000, h: 100, id: 'rB', label: '道具路B', floor: 'floorB' },
+      { x: 180, y: 560, w: 2000, h: 100, id: 'fast', label: '快速路', floor: 'floorFast' },
+      { x: 180, y: 960, w: 2000, h: 120, id: 'rA', label: '道具路A', floor: 'floorA' },
+      { x: 2180, y: 160, w: 140, h: 920 },              // 东竖井（厕所门落点，纵贯三路）
     ] },
-  { id: 2, name: '厕所', W: 1100, H: 760, floor: 'toilet', label: '厕所',
-    rooms: [{ x: 60, y: 60, w: 980, h: 640 }] },
+  { id: 2, name: '厕所', W: 1800, H: 1100, floor: 'toilet', label: '厕所',
+    rooms: [{ x: 60, y: 60, w: 1680, h: 980 }] },
 ];
 const ROOMS = MAPS[1].rooms; // 兼容旧引用（走廊三路）
 function walkable(mapId, x, y) { for (const r of MAPS[mapId].rooms) if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return true; return false; }
@@ -61,21 +61,21 @@ function inToilet(p) { return p.mapId === 2; }
 
 /* 连接口（§2.1）：触发区 + 落点 + 锁定条件 */
 const CONNECTIONS = [
-  { from: 0, to: 1, trig: { x: 800, y: 280, w: 60, h: 60 }, land: { x: 100, y: 410 }, dir: 1, lock: 'bell', oneWay: true, label: '教室出口' },
-  { from: 1, to: 2, trig: { x: 1280, y: 380, w: 60, h: 60 }, land: { x: 130, y: 600 }, dir: 1, label: '厕所门' },
-  { from: 2, to: 1, trig: { x: 70, y: 570, w: 60, h: 60 }, land: { x: 1300, y: 410 }, dir: -1, label: '厕所门' },
+  { from: 0, to: 1, trig: { x: 1700, y: 500, w: 60, h: 60 }, land: { x: 100, y: 600 }, dir: 1, lock: 'bell', oneWay: true, label: '教室出口' },
+  { from: 1, to: 2, trig: { x: 2300, y: 560, w: 60, h: 60 }, land: { x: 130, y: 980 }, dir: 1, label: '厕所门' },
+  { from: 2, to: 1, trig: { x: 70, y: 950, w: 60, h: 60 }, land: { x: 2330, y: 600 }, dir: -1, label: '厕所门' },
 ];
 
 const STALLS = [ // map2 坐标（上排 3 间 y=140，下排 2 间 y=520）
-  { x: 180, y: 140 }, { x: 480, y: 140 }, { x: 780, y: 140 },
-  { x: 330, y: 520 }, { x: 630, y: 520 },
+  { x: 300, y: 200 }, { x: 780, y: 200 }, { x: 1260, y: 200 },
+  { x: 540, y: 780 }, { x: 1020, y: 780 },
 ].map((u, i) => ({ idx: i, mapId: 2, x: u.x, y: u.y, w: 110, h: 110, doorPt: { x: u.x + 55, y: u.y - 30 }, inPt: { x: u.x + 55, y: u.y + 55 }, occ: null, occId: 0, occKind: null, obstacle: null, hasPaper: false, harass: 0, lastH: -9999, lockBy: -1, lockUntil: 0, fakeOcc: null, fakeUntil: 0 }));
-const SINK = { x: 900, y: 380, mapId: 2 };
-const SPAWNS = [0, 1, 2, 3, 4].map(i => ({ x: 200 + i * 100, y: 310 })); // map0
+const SINK = { x: 1500, y: 560, mapId: 2 };
+const SPAWNS = [0, 1, 2, 3, 4].map(i => ({ x: 240 + i * 120, y: 540 })); // map0
 const ROUTES = { // map1 内分段路径（西井→东路→东井）
-  fast: [{ x: 140, y: 410 }, { x: 400, y: 410 }, { x: 1000, y: 410 }, { x: 1250, y: 410 }],
-  A: [{ x: 140, y: 610 }, { x: 400, y: 610 }, { x: 1000, y: 610 }, { x: 1250, y: 410 }],
-  B: [{ x: 140, y: 210 }, { x: 400, y: 210 }, { x: 1000, y: 210 }, { x: 1250, y: 410 }],
+  fast: [{ x: 140, y: 610 }, { x: 500, y: 610 }, { x: 1900, y: 610 }, { x: 2220, y: 610 }],
+  A: [{ x: 140, y: 1010 }, { x: 500, y: 1010 }, { x: 1900, y: 1010 }, { x: 2220, y: 610 }],
+  B: [{ x: 140, y: 210 }, { x: 500, y: 210 }, { x: 1900, y: 210 }, { x: 2220, y: 610 }],
 };
 const ITEM_DEFS = {
   mask: { name: '口罩', color: '#8ecae6' }, broom: { name: '扫把', color: '#bdb76b' },
@@ -154,10 +154,10 @@ class Sim {
     const put1 = (kind, x, y) => this.items.push({ id: itemId++, kind, mapId: 1, x, y, taken: false });
     put1('mask', 700, 570); put1('mask', 700, 590); put1('wire', 700, 610);
     put1('paper', 700, 630); put1('comic', 700, 650); put1('soda', 700, 670); // A 路：同一 x 并排 6 件
-    put1('poster', 700, 410); // 快速路中点（顺手恶作剧，单件不参与争抢）
+    put1('poster', 1200, 610); // 快速路中点（顺手恶作剧，单件不参与争抢）
     put1('broom', 700, 170); put1('broom', 700, 195); put1('ladder', 700, 220);
     put1('plunger', 700, 245); put1('paper', 700, 270); // B 路：同一 x 并排 5 件
-    put('plunger', 950, 380); put('paper', 990, 380); // 洗手台旁（map2，put 默认）
+    put('plunger', 1560, 560); put('paper', 1600, 560); // 洗手台旁（map2，put 默认）
 
     // 主任
     this.dean = { active: false, stall: -1, planned: this.rng() < NUM.dean.prob, spawnAt: -1, leaveAt: -1, secondDone: false };
@@ -681,7 +681,7 @@ function movePlayer(p, vx, vy, dt) {
   if (p.naked) sp *= NUM.post.nakedMult; // 光屁股夹着走
   if (p.endurance < 30) sp *= 0.85; // 夹腿
   let nx = p.x + vx * sp * dt, ny = p.y + vy * sp * dt;
-  if (p._sim && p._sim.phase === 'prep' && p.mapId === 0) nx = Math.min(nx, 780); // 铃前老师堵门
+  if (p._sim && p._sim.phase === 'prep' && p.mapId === 0) nx = Math.min(nx, 1690); // 铃前老师堵门
   if (walkable(p.mapId, nx, p.y)) p.x = nx;
   if (walkable(p.mapId, p.x, ny)) p.y = ny;
   if (vx !== 0) p.dir = vx > 0 ? 1 : -1;
@@ -799,9 +799,9 @@ class Bot {
     // 赶路（含"最后一段进厕所"）：所有路径的终点都在厕所内部，wi 走完后继续补位到门内安全点
     // ── 三图分段赶路（MAP-INTERACTION §5）──
     let goal = null;
-    if (p.mapId === 0) goal = { x: 830, y: 310 };                       // 教室出口触发区
+    if (p.mapId === 0) goal = { x: 1725, y: 530 };                       // 教室出口触发区
     else if (p.mapId === 1) {
-      goal = (this.wps && this.wi < this.wps.length) ? this.wps[this.wi] : { x: 1305, y: 410 }; // 走完路径→东井厕所门触发区
+      goal = (this.wps && this.wi < this.wps.length) ? this.wps[this.wi] : { x: 2325, y: 610 }; // 走完路径→东井厕所门触发区
     } else if (p.mapId === 2) goal = null;                              // 厕所内逻辑已在前分支
     if (goal) {
       if (dist(p, goal) < 16) {
@@ -1119,12 +1119,26 @@ if (typeof window !== 'undefined') (function () {
   /* ---- 渲染 ---- */
   const cam = { x: 750, y: 310 };
   let curMapFx = 0; // 特效归属图（创建时打标）
+  // 竖屏窄视口：逻辑视口 900×620（角色 1.2× 由 CSS 缩放承担）
+  function syncViewport() {
+    const portrait = window.innerHeight > window.innerWidth;
+    const w = portrait ? 900 : 1500, h = 620;
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  }
+  window.addEventListener('resize', syncViewport);
+  syncViewport();
+  let viewMap = 0; // 实际渲染的图（定型观战时跟随对象所在图）
   function drawCam(dtSec) {
     const map = MAPS[you.mapId];
     const vw = cv.width, vh = cv.height;
-    // 摄像机跟随（MAP-INTERACTION §3.2：指数平滑 + 死区 + 边界钳制；图小于视口则居中）
-    const tx = you.final ? you.x : you.x + you.dir * 40; // 朝向预偏移 40px
-    const ty = you.y;
+    // 定型后观战：自动跟随一名存活玩家（单机最小实现；联机版走 follow 协议）
+    let spectate = null;
+    if (you.final) spectate = sim.players.find(q => !q.final) || null;
+    const focus = spectate || you;
+    const curMap = spectate ? spectate.mapId : you.mapId;
+    const map2 = MAPS[curMap];
+    const tx = focus.final ? focus.x : focus.x + focus.dir * 40; // 朝向预偏移 40px
+    const ty = focus.y;
     // 80px 死区：玩家在镜头中心 80px 内不推动镜头（防小碎步抖屏）
     const dx = tx - cam.x, dy = ty - cam.y;
     const goalX = Math.abs(dx) > 80 ? tx - Math.sign(dx) * 80 : cam.x;
@@ -1135,6 +1149,7 @@ if (typeof window !== 'undefined') (function () {
     cam.x = map.W <= vw ? map.W / 2 : clamp(cam.x, vw / 2, map.W - vw / 2);
     cam.y = map.H <= vh ? map.H / 2 : clamp(cam.y, vh / 2, map.H - vh / 2);
     curMapFx = you.mapId;
+    viewMap = curMap; // 观战时渲染被跟随者所在图
   }
   function drawConnZone(c, active) {
     const t = sim.t / TICK;
@@ -1148,158 +1163,115 @@ if (typeof window !== 'undefined') (function () {
     ctx.fillText(c.label + (active ? ' →' : ''), c.trig.x + c.trig.w / 2, c.trig.y - 6);
   }
   function draw(now, dtSec) {
+    const A = window.ART; if (!A) return;
     drawCam(dtSec || 0.016);
-    const map = MAPS[you.mapId];
-    ctx.fillStyle = '#12100c'; ctx.fillRect(0, 0, cv.width, cv.height); // 图外留黑
-    ctx.save();
-    ctx.translate(cv.width / 2 - cam.x, cv.height / 2 - cam.y);
-    // ── 当前图地形 ──
+    const map = MAPS[viewMap];
+    const tSec = sim.t / TICK;
+    const vw = cv.width, vh = cv.height;
+    const l = cam.x - vw / 2, tp = cam.y - vh / 2; // 视口在世界中的 AABB
+    const vis = (x, y, pad = 0) => x >= l - pad && x <= l + vw + pad && y >= tp - pad && y <= tp + vh + pad;
+    ctx.fillStyle = '#0E0C0A'; ctx.fillRect(0, 0, vw, vh);
+    ctx.save(); ctx.translate(vw / 2 - cam.x, vh / 2 - cam.y);
+
+    // ── 地面：按地图主题逐房间绘制（32px 棋盘砖+墙裙）──
+    const THEMES = {
+      floorClass: { base: '#E8D8B0', alt: '#DFCFA4', line: '#CBB98C', wall: '#CBB98C', wallEdge: '#8A7F6A' },
+      floorFast: { base: '#D9D2BE', alt: '#CFC8B2', line: '#BDB59F', wall: '#BDB59F', wallEdge: '#8A7F6A' },
+      floorA: { base: '#F2C078', alt: '#E8B068', line: '#D99A4E', wall: '#D99A4E', wallEdge: '#8A5A3B' },
+      floorB: { base: '#A3B18A', alt: '#98A780', line: '#7C9070', wall: '#7C9070', wallEdge: '#5F3A24' },
+      toilet: { base: '#BFE3DD', alt: '#B2DAD3', line: '#8FC9C1', wall: '#8FC9C1', wallEdge: '#5F8A83' },
+    };
     for (const r of map.rooms) {
-      ctx.fillStyle = PAL[r.floor] || PAL[map.floor] || PAL.floorFast;
-      ctx.fillRect(r.x, r.y, r.w, r.h);
-      ctx.strokeStyle = PAL.doorDark; ctx.lineWidth = 4; ctx.strokeRect(r.x, r.y, r.w, r.h);
-      if (r.label) { ctx.fillStyle = '#8a7f6a'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(r.label, r.x + r.w / 2, r.y + 16); }
+      if (!vis(r.x + r.w, r.y + r.h, 32) && !vis(r.x, r.y, 32)) continue;
+      A.floor(ctx, r, THEMES[r.floor || map.floor] || THEMES.floorFast, tSec);
+      if (r.label) A.label(ctx, r.label, r.x + r.w / 2, r.y + 28, { size: 14, color: '#FFF7ED' });
     }
-    ctx.fillStyle = '#8a7f6a'; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('【' + map.name + '】', map.W / 2, 28);
-    // ── 连接口（当前图的所有出口；冷却期灰显）──
-    for (const c of CONNECTIONS) if (c.from === you.mapId) drawConnZone(c, !(c.lock === 'bell' && sim.phase === 'prep') && sim.t >= you.switchCdUntil);
-    // ── 图内专属设施 ──
-    if (you.mapId === 2) {
-      // 洗手台（裁决#18：光屁股优雅结束终点）
-      ctx.fillStyle = '#e2f1f4'; ctx.fillRect(SINK.x - 34, SINK.y - 12, 68, 24);
-      ctx.strokeStyle = '#7ba3b5'; ctx.lineWidth = 2; ctx.strokeRect(SINK.x - 34, SINK.y - 12, 68, 24);
-      ctx.fillStyle = '#1f1a17'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('洗手台', SINK.x, SINK.y + 3);
-      // 隔间
+    // 场景布景
+    if (viewMap === 0) { A.desks(ctx, 200, 520, 8); A.label(ctx, '老师还在拖堂…', 900, 100, { size: 18, color: '#FDE047' }); }
+    if (viewMap === 1) { A.lockers(ctx, 400, 168, 5); A.lockers(ctx, 400, 968, 5); A.label(ctx, '← CLASSROOM        TOILET →', 750, 92, { size: 15, color: '#FFF7ED' }); }
+    if (viewMap === 2) A.tilesWall(ctx, 60, 60, 1680, 30);
+    A.label(ctx, '【' + map.name + '】', cam.x, tp + 34, { size: 17, color: '#FDE047' });
+
+    // ── 连接口门牌 ──
+    for (const c of CONNECTIONS) if (c.from === viewMap && vis(c.trig.x, c.trig.y, 100)) {
+      A.gate(ctx, c, !(c.lock === 'bell' && sim.phase === 'prep') && sim.t >= you.switchCdUntil, tSec);
+    }
+
+    // ── 厕所专属设施 ──
+    if (viewMap === 2) {
+      if (vis(SINK.x, SINK.y, 60)) A.sink(ctx, SINK.x, SINK.y, tSec);
       for (const st of sim.stalls) {
-        ctx.fillStyle = PAL.toiletDark; ctx.fillRect(st.x, st.y, st.w, st.h);
-        ctx.strokeStyle = '#6b8f86'; ctx.lineWidth = 3; ctx.strokeRect(st.x, st.y, st.w, st.h);
-        const occ = sim.shownOcc(st);
-        ctx.beginPath(); ctx.arc(st.x + st.w / 2, st.y - 12, 8, 0, 7);
-        ctx.fillStyle = occ ? '#ef4444' : '#22c55e'; ctx.fill();
-        if (occ) { ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('有', st.x + st.w / 2, st.y - 8); }
-        if (sim.t < st.fakeUntil) { ctx.strokeStyle = '#c084fc'; ctx.lineWidth = 2; ctx.setLineDash([3, 2]); ctx.strokeRect(st.x + 6, st.y + 4, st.w - 12, 14); ctx.setLineDash([]); }
-        if (st.obstacle) { ctx.fillStyle = '#b45309'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(st.obstacle === 'anaconda' ? '🐍巨蟒' : '🍓草莓塔', st.x + st.w / 2, st.y + 22); }
-        if (st.hasPaper && !occ) { ctx.fillStyle = '#fff'; ctx.fillRect(st.x + st.w - 16, st.y + 8, 10, 10); ctx.strokeStyle = '#999'; ctx.strokeRect(st.x + st.w - 16, st.y + 8, 10, 10); }
-        for (let i = 0; i < st.harass && i < 3; i++) { ctx.fillStyle = '#f97316'; ctx.beginPath(); ctx.arc(st.x + 10 + i * 12, st.y - 12, 4, 0, 7); ctx.fill(); }
-        if (occ === 'dean') { ctx.fillStyle = '#1f2937'; ctx.fillRect(st.x + 30, st.y + 26, 40, 44); ctx.fillStyle = '#dc2626'; ctx.fillRect(st.x + 46, st.y + 34, 8, 20); }
+        if (!vis(st.x, st.y, 130)) continue;
+        A.door(ctx, st, sim.shownOcc(st), tSec);
       }
     }
-    // ── 图内道具 ──
+
+    // ── 道具（真实图标，非色点）──
     for (const it of sim.items) {
-      if (it.taken || it.mapId !== you.mapId) continue;
-      if (it.x < cam.x - cv.width / 2 - 20 || it.x > cam.x + cv.width / 2 + 20 || it.y < cam.y - cv.height / 2 - 20 || it.y > cam.y + cv.height / 2 + 20) continue;
-      ctx.fillStyle = ITEM_DEFS[it.kind].color;
-      ctx.beginPath(); ctx.arc(it.x, it.y, 8, 0, 7); ctx.fill();
-      ctx.strokeStyle = '#555'; ctx.stroke();
-      ctx.fillStyle = '#333'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(ITEM_DEFS[it.kind].name[0], it.x, it.y + 3);
+      if (it.taken || it.mapId !== viewMap || !vis(it.x, it.y, 24)) continue;
+      A.item(ctx, it.kind, it.x, it.y, tSec);
+      A.label(ctx, ITEM_DEFS[it.kind].name, it.x, it.y + 22, { size: 9, lw: 3 });
     }
-    // ── 玩家（仅当前图）──
-    // 玩家
+
+    // ── 角色（专属造型/动作/状态）+ 头顶信息条 ──
     for (const p of sim.players) {
-      if (p.mapId !== you.mapId) continue; // 跨图零可见（渲染层）
-      if (p.x < cam.x - cv.width / 2 - 60 || p.x > cam.x + cv.width / 2 + 60 || p.y < cam.y - cv.height / 2 - 60 || p.y > cam.y + cv.height / 2 + 60) continue; // 视口外 60px 缓冲
-      if (p.atStall >= 0 && p.final) { } // 已离场
-      const x = p.x, y = p.y;
-      ctx.globalAlpha = p.final ? 0.35 : 1;
-      // P0 像素小人：12px 方头 + 14×16 方身，2px 黑描边；小屏可辨
-      const px = Math.round(x), py = Math.round(y);
-      ctx.lineWidth = 2; ctx.strokeStyle = PAL.ink;
-      ctx.fillStyle = p.final ? '#666' : p.color;
-      ctx.fillRect(px - 7, py - 10, 14, 18); ctx.strokeRect(px - 7, py - 10, 14, 18);
-      ctx.fillStyle = p.final ? '#555' : '#F5C9A6';
-      ctx.fillRect(px - 6, py - 18, 12, 10); ctx.strokeRect(px - 6, py - 18, 12, 10);
-      if (p.atStall >= 0) { // P0-5 门缝腿：隔间内只露两条腿，身份零泄露
-        const st = sim.stalls[p.atStall];
-        ctx.fillStyle = PAL.doorDark; ctx.fillRect(st.x + 34, st.y + st.h - 8, 8, 6); ctx.fillRect(st.x + st.w - 42, st.y + st.h - 8, 8, 6);
+      if (p.mapId !== viewMap || !vis(p.x, p.y, 70)) continue;
+      ctx.save(); ctx.globalAlpha = p.final ? .38 : 1;
+      ctx.translate(p.x, p.y);
+      A.character(ctx, p, tSec);
+      ctx.restore();
+      if (p.final) continue;
+      const nm = p.name + (p.endurance < 30 ? '(夹腿)' : '');
+      A.label(ctx, nm, p.x, p.y - 40, { size: 11, lw: 4, color: p.id === 0 ? '#FDE047' : '#FFF7ED' });
+      // 忍耐条（描边块）
+      const bw = 34, e = clamp(p.endurance, 0, 100) / 100;
+      A.px(ctx, p.x - bw / 2, p.y - 36, bw, 6, '#00000066');
+      A.px(ctx, p.x - bw / 2, p.y - 36, bw * e, 6, e > .5 ? '#4ADE80' : e > .3 ? '#FBBF24' : '#EF4444');
+      A.outline(ctx, p.x - bw / 2, p.y - 36, bw, 6, '#1F1A17', 1);
+      if (p.beaten > 0) A.label(ctx, `揍${p.beaten}/8`, p.x - 34, p.y - 42, { size: 9, lw: 3, color: '#FB923C' });
+      // 状态 chips
+      let chip = '';
+      if (p.state === 'relief') chip = '排便中 ' + Math.ceil(p.relief.left / TICK) + 's';
+      else if (p.state === 'post') chip = '没纸!';
+      else if (p.naked) chip = '光屁股 ' + Math.max(0, (p.post.autoAt - sim.t) / TICK).toFixed(0) + 's';
+      else if (p.climbed >= 0) chip = p.hasClimbedPaper ? '爬出(Q)' : '取纸(Q)';
+      else if (p.charging) chip = p.charging.push ? '推门! X撤' : ({ wire: '撬锁', ladder: '翻墙', poke: '捅门', bonk: '拍晕', knock: '拍门', sniff: '嗅闻', paper: '递纸', clear: '疏通', takePaper: '取纸', climbOut: '爬出', wash: '洗手', punch: '出拳!', enterStall: '进入' }[p.charging.type] || p.charging.type) + '…';
+      if (chip) A.bubble(ctx, p.x, p.y + 44, chip, { size: 10, bg: '#26221ADD', border: p.charging && p.charging.push ? '#EF4444' : '#8A5A3B' });
+      // 排便进度条
+      if (p.state === 'relief' && p.relief) {
+        const pr = 1 - p.relief.left / p.relief.total;
+        A.px(ctx, p.x - 20, p.y + 26, 40, 6, '#00000066'); A.px(ctx, p.x - 20, p.y + 26, 40 * pr, 6, '#38BDF8'); A.outline(ctx, p.x - 20, p.y + 26, 40, 6, '#1F1A17', 1);
       }
-      if (!p.final) {
-        // 眼睛
-        ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(x + p.dir * 3 - 2, y - 3, 1.6, 0, 7); ctx.arc(x + p.dir * 3 + 3, y - 3, 1.6, 0, 7); ctx.fill();
-        // debuff 标记
-        ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText('💩', x, y + 24);
-        // 名字 + 忍耐
-        ctx.fillStyle = '#111'; ctx.font = 'bold 11px sans-serif'; ctx.fillText(p.name + (p.endurance < 30 ? '(夹腿)' : ''), x, y - 26);
-        const w = 30, e = clamp(p.endurance, 0, 100) / 100;
-        ctx.fillStyle = '#00000033'; ctx.fillRect(x - w / 2, y - 22, w, 4);
-        ctx.fillStyle = e > 0.5 ? '#4ade80' : e > 0.3 ? '#fbbf24' : '#ef4444'; ctx.fillRect(x - w / 2, y - 22, w * e, 4);
-        // 状态
-        if (p.state === 'relief') { const pr = 1 - p.relief.left / p.relief.total; ctx.fillStyle = '#00000044'; ctx.fillRect(x - 18, y + 28, 36, 5); ctx.fillStyle = '#38bdf8'; ctx.fillRect(x - 18, y + 28, 36 * pr, 5); }
-        if (p.state === 'post') { ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 10px sans-serif'; ctx.fillText('没纸!', x, y + 40); }
-        if (p.beaten > 0 && !p.final) { ctx.fillStyle = '#fb923c'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(`揍${p.beaten}/8`, x - 36, y - 26); }
-        if (p.charging && p.charging.type === 'punch') { ctx.fillStyle = '#fff'; ctx.fillRect(x + p.dir * 14, y - 8, 11, 9); ctx.strokeStyle = PAL.ink; ctx.lineWidth = 1.5; ctx.strokeRect(x + p.dir * 14, y - 8, 11, 9); }
-        if (p.naked) { ctx.fillStyle = '#f472b6'; ctx.font = 'bold 10px sans-serif'; ctx.fillText('光屁股!', x, y + 40); ctx.fillStyle = 'rgba(251,207,232,0.55)'; ctx.fillRect(x - 9, y + 4, 18, 12); ctx.strokeStyle = '#f9a8d4'; ctx.strokeRect(x - 9, y + 4, 18, 12); }
-        if (p.staggerUntil > sim.t) { ctx.fillStyle = '#f87171'; ctx.font = '10px sans-serif'; ctx.fillText('晕', x + 16, y - 12); }
-        if (sim.t < p.armorUntil || sim.t < p.rageUntil) { ctx.strokeStyle = sim.t < p.rageUntil ? '#f97316' : '#38bdf8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 15, 0, 7); ctx.stroke(); }
-        // 引导条
-        if (p.charging && !p.charging.push) {
-          const g = p.charging, pr = clamp((sim.t - g.startT) / (g.resolveT - g.startT), 0, 1);
-          ctx.fillStyle = '#00000044'; ctx.fillRect(x - 18, y - 36, 36, 5);
-          ctx.fillStyle = '#a78bfa'; ctx.fillRect(x - 18, y - 36, 36 * pr, 5);
-          ctx.fillStyle = '#7c3aed'; ctx.font = '9px sans-serif'; ctx.fillText({ wire: '撬锁..', ladder: '翻墙..', poke: '捅..', bonk: '拍..', knock: '拍门..', sniff: '闻..', paper: '递纸..', clear: '疏通..', enterStall: '进入..', takePaper: '取纸..', climbOut: '爬出..', wash: '洗手..' }[g.type] || g.type, x, y - 40);
-        }
-        if (p.charging && p.charging.push) {
-          const pr = clamp((p.charging.pushUntil - sim.t) / NUM.guide.push, 0, 1);
-          ctx.fillStyle = '#00000066'; ctx.fillRect(x - 20, y - 40, 40, 6);
-          ctx.fillStyle = '#ef4444'; ctx.fillRect(x - 20, y - 40, 40 * pr, 6);
-          ctx.fillStyle = '#111'; ctx.font = 'bold 10px sans-serif'; ctx.fillText('推门!(X撤)', x, y - 46);
-        }
-      }
-      ctx.globalAlpha = 1;
+      // 占坑侠
+      if (p.atStall >= 0 && p.state !== 'relief' && sim.t - (p.enterT || 0) > s(15)) A.shameSign(ctx, p.x, p.y - 56, tSec);
+      // 霸体/激怒环
+      if (sim.t < p.armorUntil || sim.t < p.rageUntil) { ctx.strokeStyle = sim.t < p.rageUntil ? '#F97316' : '#38BDF8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.x, p.y, 18, 0, 7); ctx.stroke(); }
     }
-    // 特效
+
+    // ── 几何降级特效 + 拟声字 + 场景内 tips ──
     for (const e of fx) {
+      if (e.fm !== undefined && e.fm !== viewMap || !vis(e.x, e.y, 90)) continue;
       ctx.globalAlpha = clamp(e.life, 0, 1);
-      const age = 1 - Math.max(0, e.life);
-      if (e.kind.startsWith('sonar')) {
-        const lv = +e.kind.slice(-1), R = 8 + age * (20 + lv * 12);
-        ctx.strokeStyle = e.color; ctx.lineWidth = lv === 4 ? 4 : 2;
-        if (lv === 1) { ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.arc(e.x, e.y, R, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
-        else if (lv === 2) { ctx.beginPath(); ctx.arc(e.x, e.y, R, 0, 7); ctx.stroke(); for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.arc(e.x + Math.cos(k * 1.57) * R, e.y + Math.sin(k * 1.57) * R, 2, 0, 7); ctx.fillStyle = e.color; ctx.fill(); } }
-        else if (lv === 3) { ctx.beginPath(); for (let k = 0; k < 16; k++) { const a = k * Math.PI / 8, r = R * (k % 2 ? 0.6 : 1); const px = e.x + Math.cos(a) * r, py = e.y + Math.sin(a) * r; k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } ctx.closePath(); ctx.stroke(); }
-        else { ctx.strokeRect(e.x - R, e.y - R * 0.7, R * 2, R * 1.4); ctx.fillStyle = e.color; ctx.fillRect(e.x - 2, e.y - R * 0.7, 4, R * 0.35); } // 领带形缺口
-      } else if (e.kind === 'ripple') { ctx.strokeStyle = e.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(e.x, e.y, (1.6 - e.life) * 26, 0, 7); ctx.stroke(); }
+      if (e.kind === 'ripple') { ctx.strokeStyle = e.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(e.x, e.y, (1.6 - e.life) * 26, 0, 7); ctx.stroke(); }
       else { ctx.fillStyle = e.color; ctx.beginPath(); ctx.arc(e.x, e.y, 4 + (1 - e.life) * 5, 0, 7); ctx.fill(); }
       ctx.globalAlpha = 1;
     }
-    for (const f of floats) { ctx.globalAlpha = clamp(f.life, 0, 1); ctx.fillStyle = f.color; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(f.txt, f.x, f.y - (1.6 - f.life) * 14); ctx.globalAlpha = 1; }
-    // P0-9 拟声字：3px 黑描边 + 弹入定格（喜剧节奏骨架）
-    for (const o of onomats) {
-      const pr = clamp(o.t / 0.18, 0, 1), sc = 0.6 + 0.4 * (1 - Math.pow(1 - pr, 3)) + Math.sin(o.t * 22) * 0.03 * (1 - pr);
-      ctx.save(); ctx.globalAlpha = clamp(o.life * 1.4, 0, 1); ctx.translate(o.x, o.y - (1 - o.life) * 16); ctx.scale(sc, sc);
-      ctx.font = '900 24px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.lineJoin = 'round';
-      ctx.lineWidth = 6; ctx.strokeStyle = PAL.onomatInk; ctx.strokeText(o.txt, 0, 0);
-      ctx.fillStyle = o.color; ctx.fillText(o.txt, 0, 0); ctx.restore();
-    }
-    // ── 特效（仅当前图）──
-    for (const e of fx) {
-      if (e.fm !== undefined && e.fm !== you.mapId) continue;
-      if (e.x < cam.x - cv.width / 2 - 80 || e.x > cam.x + cv.width / 2 + 80) continue;
-      ctx.globalAlpha = clamp(e.life, 0, 1);
-      const age = 1 - Math.max(0, e.life);
-      if (e.kind.startsWith('sonar')) {
-        const lv = +e.kind.slice(-1), R = 8 + age * (20 + lv * 12);
-        ctx.strokeStyle = e.color; ctx.lineWidth = lv === 4 ? 4 : 2;
-        if (lv === 1) { ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.arc(e.x, e.y, R, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
-        else if (lv === 2) { ctx.beginPath(); ctx.arc(e.x, e.y, R, 0, 7); ctx.stroke(); for (let k2 = 0; k2 < 4; k2++) { ctx.beginPath(); ctx.arc(e.x + Math.cos(k2 * 1.57) * R, e.y + Math.sin(k2 * 1.57) * R, 2, 0, 7); ctx.fillStyle = e.color; ctx.fill(); } }
-        else if (lv === 3) { ctx.beginPath(); for (let k2 = 0; k2 < 16; k2++) { const a2 = k2 * Math.PI / 8, r2 = R * (k2 % 2 ? 0.6 : 1); const px2 = e.x + Math.cos(a2) * r2, py2 = e.y + Math.sin(a2) * r2; k2 ? ctx.lineTo(px2, py2) : ctx.moveTo(px2, py2); } ctx.closePath(); ctx.stroke(); }
-        else { ctx.strokeRect(e.x - R, e.y - R * 0.7, R * 2, R * 1.4); ctx.fillStyle = e.color; ctx.fillRect(e.x - 2, e.y - R * 0.7, 4, R * 0.35); }
-      } else if (e.kind === 'ripple') { ctx.strokeStyle = e.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(e.x, e.y, (1.6 - e.life) * 26, 0, 7); ctx.stroke(); }
-      else { ctx.fillStyle = e.color; ctx.beginPath(); ctx.arc(e.x, e.y, 4 + (1 - e.life) * 5, 0, 7); ctx.fill(); }
-      ctx.globalAlpha = 1;
-    }
-    for (const f of floats) { if (f.fm !== undefined && f.fm !== you.mapId) continue; ctx.globalAlpha = clamp(f.life, 0, 1); ctx.fillStyle = f.color; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(f.txt, f.x, f.y - (1.6 - f.life) * 14); ctx.globalAlpha = 1; }
-    for (const o of onomats) {
-      if (o.fm !== undefined && o.fm !== you.mapId) continue;
-      const pr = clamp(o.t / 0.18, 0, 1), sc = 0.6 + 0.4 * (1 - Math.pow(1 - pr, 3)) + Math.sin(o.t * 22) * 0.03 * (1 - pr);
-      ctx.save(); ctx.globalAlpha = clamp(o.life * 1.4, 0, 1); ctx.translate(o.x, o.y - (1 - o.life) * 16); ctx.scale(sc, sc);
-      ctx.font = '900 24px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.lineJoin = 'round';
-      ctx.lineWidth = 6; ctx.strokeStyle = PAL.onomatInk; ctx.strokeText(o.txt, 0, 0);
-      ctx.fillStyle = o.color; ctx.fillText(o.txt, 0, 0); ctx.restore();
-    }
-    drawPfx(dtSec || 0.016); // pixelfx 真特效（同图裁剪）
-    if (sim.dean.active && you.mapId === 2) { ctx.fillStyle = PAL.deanFog + '22'; ctx.fillRect(cam.x - cv.width / 2, cam.y - cv.height / 2, cv.width, cv.height); }
+    for (const f of floats) { if (f.fm !== undefined && f.fm !== viewMap || !vis(f.x, f.y, 40)) continue; A.label(ctx, f.txt, f.x, f.y - (1.6 - f.life) * 14, { size: 12, lw: 4, color: f.color }); }
+    for (const o of onomats) { if (o.fm !== undefined && o.fm !== viewMap || !vis(o.x, o.y, 80)) continue; A.onomat(ctx, o); }
+    // 引导提示（键盘/触屏上下文提示）
+    const hint = (() => {
+      if (sim.phase === 'prep') return 'WASD/摇杆 自由走动 · 铃响后走到右侧出口';
+      if (viewMap === 0) return '→ 走向教室出口';
+      if (viewMap === 1) return 'Q 拾道具 · P 出拳 · → 走到厕所门';
+      if (you.state === 'post') return '1 喊话 · 2 破罐(+5s) · 3 光屁股出门';
+      if (you.naked) return 'Q 取纸/翻入 · R 洗手(+5s) · 10s 内解决';
+      if (you.charging && you.charging.push) return 'X 松手保命！(主任间有咳嗽预警)';
+      return 'Q 交互 · E 嗅闻/涡轮 · F 道具 · R 冲水 · P 出拳';
+    })();
+    A.bubble(ctx, cam.x, tp + vh - 18, hint, { size: 11, bg: '#1F1A17DD', border: '#FDE047' });
+
+    drawPfx(dtSec || 0.016);
+    if (sim.dean.active && viewMap === 2) { ctx.fillStyle = PAL.deanFog + '22'; ctx.fillRect(l, tp, vw, vh); }
     ctx.restore();
   }
 
@@ -1661,18 +1633,18 @@ if (typeof window === 'undefined' && process.argv[2] === 'test') (function () {
   // T17：三地图切图事务（ABORT 回滚 / 落点 / 防横跳冷却 / 铃前阻挡）
   T('三地图连接口与切图事务', () => {
     const sim = mkSim(501); const A = sim.players[0];
-    // 铃前：教室出口阻挡（x 不超过 780）
-    A.mapId = 0; A.x = 760; A.y = 310; sim.phase = 'prep'; A._simT = sim.t;
+    // 铃前：教室出口阻挡（x 不超过 1690）
+    A.mapId = 0; A.x = 1660; A.y = 530; sim.phase = 'prep'; A._simT = sim.t;
     movePlayer(A, 1, 0, 1);
-    ok(A.x <= 780, '铃前老师堵门');
+    ok(A.x <= 1690, '铃前老师堵门');
     // 铃后：走入出口触发区 → 切图到 map1
-    sim.phase = 'run'; sim.bellT = sim.t; A.x = 820; A.y = 310;
+    sim.phase = 'run'; sim.bellT = sim.t; A.x = 1720; A.y = 530;
     sim.touchConnections(A);
     eq(A.mapId, 1, '应切到教室外');
     eq(A.x, CONNECTIONS[0].land.x, '落点正确');
     ok(A.switchCdUntil > sim.t, '应有 1.5s 防横跳冷却');
     // 冷却内再次踩触发区不生效
-    A.x = 820; A.y = 310; const mapBefore = A.mapId;
+    A.x = 1720; A.y = 530; const mapBefore = A.mapId;
     sim.touchConnections(A);
     eq(A.mapId, mapBefore, '冷却内不反横跳');
     // 在途引导切图 → ABORT 回滚（铁丝保留）
