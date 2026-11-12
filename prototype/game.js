@@ -355,7 +355,7 @@ class Sim {
     if (p.final) return;
     p.charging = null; p.state = 'idle'; p.relief = null; p.post = null; p.naked = false; p.climbed = -1;
     if (p.atStall >= 0) { const st = this.stalls[p.atStall]; if (st.occ === p) { st.occ = null; st.occKind = null; st.occId++; st.harass = 0; this.clearFake(st); } p.atStall = -1; }
-    p.final = { kind, time: kind === 'done' ? Math.max(0.05, (this.t - this.bellT) / TICK + penalty / TICK) : (this.t - this.bellT) / TICK };
+    p.final = { kind, time: kind === 'done' ? Math.max(0.05, (this.t - this.bellT) / TICK + penalty / TICK - (p.bonusTime || 0)) : (this.t - this.bellT) / TICK };
     this.finalCount++;
     this._ev('final', { pid: p.id, kind, time: p.final.time });
     // 指向该玩家的在途引导 → 目标失效（段②下 tick 也会捕获，这里即时清理更快）
@@ -590,7 +590,10 @@ class Sim {
         const occ = st.occ; if (!occ || occ === 'dean' || !occ.post) { this._ev('intentFail', { pid: p.id, why: 'target', act: 'paper' }); return; }
         this._consume(p, 'paper');
         occ.post = null; this._finalize(occ, 'done');
-        if (!p.final) { p.endurance = Math.min(100, p.endurance + 10); } // 未定型：人情回血
+        if (!p.final) {
+          p.endurance = Math.min(100, p.endurance + 10); // 人情回血
+          p.bonusTime = (p.bonusTime || 0) + 4; // 递纸硬收益：本局完成用时 -4s（修资敌陷阱）
+        }
         this._ev('paperDone', { pid: p.id, vid: occ.id }); return;
       }
       case 'takePaper': {
@@ -815,6 +818,47 @@ class Bot {
   onSniffResult(ev) { if (ev.pid === this.p.id) this.sniffInfo[ev.idx] = { show: ev.show }; }
 }
 
+
+/* ================= 中英双语文案（海外发行，?lang=en） ================= */
+const LANG = (typeof location !== 'undefined' && new URLSearchParams(location.search).get('lang') === 'en') ? 'en' : 'zh';
+const L = (zh, en) => LANG === 'en' ? en : zh;
+const TXT = {
+  dbf: L('💩大肠翻滚', '💩 GUT TURMOIL'),
+  prep: L('准备', 'READY'), teacher: L('老师还在拖堂…', 'TEACHER IS STILL TALKING…'),
+  hintPrep: L('WASD/摇杆 自由走动 · 铃响后走到右侧出口', 'WASD / JOYSTICK · WALK TO THE EAST EXIT AFTER THE BELL'),
+  hintMap0: L('→ 走向教室出口', '→ HEAD TO THE EXIT'),
+  hintMap1: L('Q 拾道具 · P 出拳 · → 走到厕所门', 'Q PICK UP · P PUNCH · → TO THE TOILET DOOR'),
+  hintPost: L('1 喊话 · 2 破罐(+5s) · 3 光屁股出门', '1 SHOUT · 2 WALK OF SHAME(+5s) · 3 PANTS DOWN'),
+  hintNaked: L('Q 取纸/翻入 · R 洗手(+5s) · 10s 内解决', 'Q TAKE PAPER · R WASH(+5s) · 10s LEFT'),
+  hintPush: L('X 松手保命！(主任间有咳嗽预警)', 'X BAIL OUT! (COUGH = DEAN INSIDE)'),
+  hintGeneral: L('Q 交互 · E 嗅闻/涡轮 · F 道具 · R 冲水 · P 出拳', 'Q INTERACT · E SNIFF/TURBO · F ITEM · R FLUSH · P PUNCH'),
+  bell: L('叮铃铃——下课！', 'RIIING — CLASS DISMISSED!'),
+  preBell: L('上课预备铃！忍耐流失 ×1.5', 'WARNING BELL! DRAIN ×1.5'),
+  softBell: L('上课铃倒计时！流失 ×2', 'CLASS BELL! DRAIN ×2'),
+  deanIn: L('！！主任来了！！', '!! THE DEAN IS HERE !!'),
+  deanOut: L('主任哼着歌走了~', 'Dean strolls off, humming~'),
+  post: L('没纸了！！光屁股出门找纸/洗手', 'NO PAPER!! Go find some / wash up'),
+  naked: L('光着屁股出来了！', 'PANTS DOWN, OUT WE GO!'),
+  nakedBanner: L('10s 内：去有纸隔间取纸 / 洗手台优雅结束', '10s: GRAB PAPER / WASH FOR +5s'),
+  paperGot: L('取到纸！', 'PAPER SECURED!'),
+  wash: L('洗手！优雅结束(+5s)', 'WASHED! CLASSY FINISH (+5s)'),
+  climbIn: L('翻进去了！别惊动里面', "IN! Don't wake the occupant"),
+  climbOut: L('爬出来！干净完成', 'CLIMBED OUT — CLEAN FINISH'),
+  punch: L('砰！', 'POW!'),
+  beaten: L(' 被打出屎了！！', ' JUST GOT BEATEN INTO A CODE BROWN!!'),
+  endTitle: L('下课结束！', 'CLASS IS OVER!'),
+  board: L('💩 屎王榜 · 下课总排名', '💩 POO ROYALTY · FINAL STANDINGS'),
+  again: L('再来一局', 'PLAY AGAIN'),
+  done: L('完成', 'DONE'), blow: L('炸裆', 'BLOWOUT'), caught: L('被抓', 'BUSTED'),
+  shout: L('📢 喊话要纸！', '📢 SCREAM FOR PAPER'),
+  btnNaked: L('🩲 光屁股出门找纸/洗手', '🩲 PANTS DOWN'),
+  btnBreak: L('💩 破罐破摔(+5s)', '💩 WALK OF SHAME (+5s)'),
+  btnInteract: L('交互', 'ACT'), btnSkill: L('技能', 'SKILL'), btnItem: L('道具', 'ITEM'),
+  btnCancel: L('取消', 'BAIL'), btnPunch: L('出拳', 'PUNCH'), btnFlush: L('冲水', 'FLUSH'),
+  btnRun: L('走', 'GO'),
+  mapName: { 0: L('教室', 'CLASSROOM'), 1: L('教室外', 'HALLWAY'), 2: L('厕所', 'TOILET') },
+  gate: L('  →', '  →'),
+};
 /* ================= 浏览器端（渲染/输入/音频） ================= */
 let PFX = null; // pixelfx bundle（真实像素特效），异步加载；失败时降级
 if (typeof window !== 'undefined') {
@@ -828,6 +872,12 @@ if (typeof window !== 'undefined') (function () {
   you.bot = false; bots.forEach(b => b.p.bot = true);
   // 强制你为随机 debuff（已在分配中）
 
+  // 首屏把按钮/标题切成当前语言
+  if (LANG === 'en') {
+    const map = { shout: TXT.shout, btnNaked: TXT.btnNaked, btnBreak: TXT.btnBreak, btnInteract: TXT.btnInteract, btnSkill: TXT.btnSkill, btnItem: TXT.btnItem, btnCancel: TXT.btnCancel, btnPunch: TXT.btnPunch, btnFlush: TXT.btnFlush, btnRun: TXT.btnRun, again: TXT.again };
+    document.querySelectorAll('[data-i18n]').forEach(el => { const k = el.getAttribute('data-i18n'); if (map[k]) el.textContent = map[k]; });
+    const h = document.getElementById('endTitle'); if (h) h.textContent = TXT.endTitle;
+  }
   const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   const fx = []; const floats = []; const onomats = [];
   let audioOn = /Mobi|Android|iPhone/i.test(navigator.userAgent) ? false : true;
@@ -896,18 +946,26 @@ if (typeof window !== 'undefined') (function () {
   };
 
   /* ---- 事件表现 ---- */
+  const seenTips = {};
+  function ev0Tick() { return sim.t <= 2; }
+  function tipOnce(key, zh, en, cls, dur) { if (seenTips[key]) return; seenTips[key] = 1; banner(L(zh, en), cls || 'ok', dur || 3.2); }
   function consumeEvents() {
     curMapFx = you.mapId; // 切图首帧即按新图给特效打标
+    if (sim.phase === 'prep' && ev0Tick()) tipOnce('start', '💡 铃前可在教室自由走动，出不去门。先熟悉按键！', '💡 Move freely before the bell. The door is locked. Learn the controls!', 'big', 4.5);
     for (const ev of sim.events) {
       const p = sim.players[ev.pid] || null;
+      if (ev.type === 'switchMap' && ev.to === 2 && ev.pid === 0) tipOnce('toilet', '💡 5 间隔间：绿灯空房可进，红灯要闯；卷纸挂墙是明牌', '💡 5 stalls: GREEN = free, RED = raid. Paper on the wall is visible.', 'warn', 4.2);
+      if (ev.type === 'postStuck' && ev.pid === 0) tipOnce('post', '💡 没纸？光屁股出门去别间取纸，或洗手台优雅结束(+5s)', '💡 No paper? Go get some, or WASH for a classy +5s.', 'warn', 4.2);
+      if (ev.type === 'punchHit' && ev.vid === 0) tipOnce('punched', '💡 挨揍 8 次会被打出屎！P 键还手，击退不硬直', '💡 8 hits = CODE BROWN. Press P — punches knock back, no stun.', 'danger', 3.8);
+      if (ev.type === 'bell' && ev.kind === 'pre') tipOnce('prebell', '💡 预备铃：全员忍耐流失 ×1.5，别再闲逛了', '⚠ WARNING BELL: drain ×1.5. MOVE.', 'warn', 3.2);
       switch (ev.type) {
         case 'bell':
-          if (ev.kind === 'start') { banner('叮铃铃——下课！', 'big', 2); SND.bell(); }
-          if (ev.kind === 'pre') { banner('上课预备铃！忍耐流失 ×1.5', 'warn', 2.5); SND.bell(); }
-          if (ev.kind === 'soft') { banner('上课铃倒计时 45s！流失 ×3', 'danger', 3); SND.bell(); }
+          if (ev.kind === 'start') { banner(TXT.bell, 'big', 2); SND.bell(); }
+          if (ev.kind === 'pre') { banner(TXT.preBell, 'warn', 2.5); SND.bell(); }
+          if (ev.kind === 'soft') { banner(TXT.softBell, 'danger', 3); SND.bell(); }
           break;
-        case 'deanIn': banner('！！主任来了！！', 'danger', 2.6); SND.deanIn(); if (PFX) spawnPfx(PFX.exclamation, 550, 300, { palette: ['#1a0e14', '#7f1d1d', '#dc2626', '#fca5a5', '#fff7ed'] }); break;
-        case 'deanOut': banner('主任哼着歌走了~', 'ok', 2); SND.deanOut(); break;
+        case 'deanIn': banner(TXT.deanIn, 'danger', 2.6); SND.deanIn(); if (PFX) spawnPfx(PFX.exclamation, 550, 300, { palette: ['#1a0e14', '#7f1d1d', '#dc2626', '#fca5a5', '#fff7ed'] }); break;
+        case 'deanOut': banner(TXT.deanOut, 'ok', 2); SND.deanOut(); break;
         case 'deanAnger': banner(`${(sim.players[ev.pid] || {}).name || '?'} 被主任没收道具轰出厕所！`, 'warn', 2.5); addFx(1150, 320, 'smoke', '#b91c1c', 22); SND.anger(); break;
         case 'harass': { const st = sim.stalls[ev.idx]; if (PFX) spawnPfx(PFX.hitSpark, st.doorPt.x, st.doorPt.y - 10, {}, 2, 0.8); float(st.doorPt.x - 20, st.doorPt.y - 14, `骚扰 ${ev.val}/3`, '#fdba74'); SND.noise(); break; }
         case 'evict': { const st = sim.stalls[ev.idx]; if (PFX) spawnPfx(PFX.groundSlam, st.doorPt.x, st.doorPt.y + 30, {}, 2, 1.1); addFx(st.doorPt.x, st.doorPt.y - 20, 'launch', '#f97316', 20); float(st.doorPt.x, st.doorPt.y - 40, '被逼出来了！', '#fb923c'); SND.evict(); break; }
@@ -921,17 +979,17 @@ if (typeof window !== 'undefined') (function () {
         case 'sniffResult': { const st = sim.stalls[ev.idx]; const m = { none: '没味儿~', player: '有人！(玩家)', dean: '主任？！' }; float(st.doorPt.x - 24, st.doorPt.y - 30, `👃${m[ev.show]}`, '#a5f3fc'); beep(520, .12, 'sine', .06); break; }
         case 'infect': float(p.x, p.y - 40, `被传染 -${ev.loss.toFixed(0)}`, '#a3e635'); break;
         case 'caught': banner('你被主任当场抓获……判负！', 'danger', 3); break;
-        case 'postStuck': if (ev.pid === 0) showPostUI(true); float(p.x, p.y - 30, '没纸了！！光屁股出门找纸/洗手', '#fbbf24'); break;
-        case 'nakedOut': { if (ev.pid === 0) showPostUI(false); float(p.x, p.y - 30, '光着屁股出来了！', '#f472b6'); addFx(p.x, p.y, 'smoke', '#fbcfe8', 10); banner('10s 内：去有纸隔间取纸 / 洗手台优雅结束', 'warn', 2.4); break; }
-        case 'paperGot': { float(p.x, p.y - 30, '取到纸！', '#86efac'); if (!p.hasClimbedPaper) banner('体面人！', 'ok', 1.6); break; }
-        case 'climbIn': { const st = sim.stalls[ev.idx]; float(st.doorPt.x, st.doorPt.y - 30, '翻进去了！别惊动里面', '#c084fc'); banner('梯子架好 → 取纸 → 原路爬出', 'warn', 2); break; }
-        case 'climbOut': { float(p.x, p.y - 30, '爬出来！干净完成', '#86efac'); banner('神不知鬼不觉', 'ok', 1.6); break; }
+        case 'postStuck': if (ev.pid === 0) showPostUI(true); float(p.x, p.y - 30, TXT.post, '#fbbf24'); break;
+        case 'nakedOut': { if (ev.pid === 0) showPostUI(false); float(p.x, p.y - 30, TXT.naked, '#f472b6'); addFx(p.x, p.y, 'smoke', '#fbcfe8', 10); banner(TXT.nakedBanner, 'warn', 2.4); break; }
+        case 'paperGot': { float(p.x, p.y - 30, TXT.paperGot, '#86efac'); if (!p.hasClimbedPaper) banner('体面人！', 'ok', 1.6); break; }
+        case 'climbIn': { const st = sim.stalls[ev.idx]; float(st.doorPt.x, st.doorPt.y - 30, TXT.climbIn, '#c084fc'); banner('梯子架好 → 取纸 → 原路爬出', 'warn', 2); break; }
+        case 'climbOut': { float(p.x, p.y - 30, TXT.climbOut, '#86efac'); banner('神不知鬼不觉', 'ok', 1.6); break; }
         case 'raidFail': float(p.x, p.y - 40, '里面没纸/没人了…', '#fca5a5'); break;
-        case 'switchMap': if (ev.pid === 0) { cam.x = you.x; cam.y = you.y; banner(`🚪 进入【${MAPS[ev.to].name}】`, 'ok', 1.2); beep(150, .12, 'sine', .07); } break;
+        case 'switchMap': if (ev.pid === 0) { cam.x = you.x; cam.y = you.y; banner(`🚪 ${L('进入','ENTER')}【${TXT.mapName[ev.to]}】`, 'ok', 1.2); beep(150, .12, 'sine', .07); } break;
         case 'punchHit': { const v = sim.players[ev.vid]; if (PFX) spawnPfx(PFX.cartoonPow, v.x, v.y - 16, { text: 'POW!', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, v.mapId, 0.9); float(v.x, v.y - 26, `砰！(揍${ev.beaten}/8)`, '#fdba74'); onomat(v.x, v.y - 44, '砰！', PAL.onomat); addFx(v.x, v.y, 'ripple', '#fdba74', 6); beep(180, .08, 'square', .09); break; }
         case 'punchMiss': float(p.x, p.y - 30, '挥空了…', '#d1d5db'); break;
-        case 'beatenOut': if (PFX) spawnPfx(PFX.cartoonPow, p.x, p.y, { text: 'K.O.!', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, p.mapId, 1.6); banner(`${(sim.players[ev.pid]||{}).name} 被打出屎了！！`, 'danger', 2.8); addFx(p.x, p.y, 'smoke', '#8d5a3a', 26); SND.blowout(); break;
-        case 'washDone': { float(p.x, p.y - 30, '洗手！优雅结束(+5s)', '#a5f3fc'); banner('讲卫生 · 优雅结束', 'ok', 1.8); break; }
+        case 'beatenOut': if (PFX) spawnPfx(PFX.cartoonPow, p.x, p.y, { text: 'K.O.!', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, p.mapId, 1.6); banner(`${(sim.players[ev.pid]||{}).name}${TXT.beaten}`, 'danger', 2.8); addFx(p.x, p.y, 'smoke', '#8d5a3a', 26); SND.blowout(); break;
+        case 'washDone': { float(p.x, p.y - 30, TXT.wash, '#a5f3fc'); banner(L('讲卫生 · 优雅结束','ACTUALLY WASHED THEIR HANDS'), 'ok', 1.8); break; }
         case 'shout': float(p.x, p.y - 40, '谁有纸！！', '#fde047'); SND.noise(); break;
         case 'paperDone': banner(`${p.name} 递纸！人情+`, 'ok', 2); break;
         case 'pushStart': banner('推门中……听到动静可取消！(X)', 'warn', 2); beep(90, .3, 'sawtooth', .07); break;
@@ -1187,8 +1245,8 @@ if (typeof window !== 'undefined') (function () {
       if (r.label) A.label(ctx, r.label, r.x + r.w / 2, r.y + 28, { size: 14, color: '#FFF7ED' });
     }
     // 场景布景
-    if (viewMap === 0) { A.desks(ctx, 200, 520, 8); A.label(ctx, '老师还在拖堂…', 900, 100, { size: 18, color: '#FDE047' }); }
-    if (viewMap === 1) { A.lockers(ctx, 400, 168, 5); A.lockers(ctx, 400, 968, 5); A.label(ctx, '← CLASSROOM        TOILET →', 750, 92, { size: 15, color: '#FFF7ED' }); }
+    if (viewMap === 0) { A.desks(ctx, 200, 520, 8); A.label(ctx, TXT.teacher, 900, 100, { size: 18, color: '#FDE047' }); }
+    if (viewMap === 1) { A.lockers(ctx, 400, 168, 5); A.lockers(ctx, 400, 968, 5); A.label(ctx, LANG==='en'?'← CLASSROOM        TOILET →':'← 教室              厕所 →', 750, 92, { size: 15, color: '#FFF7ED' }); }
     if (viewMap === 2) A.tilesWall(ctx, 60, 60, 1680, 30);
     A.label(ctx, '【' + map.name + '】', cam.x, tp + 34, { size: 17, color: '#FDE047' });
 
@@ -1231,10 +1289,10 @@ if (typeof window !== 'undefined') (function () {
       if (p.beaten > 0) A.label(ctx, `揍${p.beaten}/8`, p.x - 34, p.y - 42, { size: 9, lw: 3, color: '#FB923C' });
       // 状态 chips
       let chip = '';
-      if (p.state === 'relief') chip = '排便中 ' + Math.ceil(p.relief.left / TICK) + 's';
-      else if (p.state === 'post') chip = '没纸!';
-      else if (p.naked) chip = '光屁股 ' + Math.max(0, (p.post.autoAt - sim.t) / TICK).toFixed(0) + 's';
-      else if (p.climbed >= 0) chip = p.hasClimbedPaper ? '爬出(Q)' : '取纸(Q)';
+      if (p.state === 'relief') chip = L('排便中 ','SQUATTING ') + Math.ceil(p.relief.left / TICK) + 's';
+      else if (p.state === 'post') chip = L('没纸!','NO PAPER!');
+      else if (p.naked) chip = L('光屁股 ','PANTS DOWN ') + Math.max(0, (p.post.autoAt - sim.t) / TICK).toFixed(0) + 's';
+      else if (p.climbed >= 0) chip = p.hasClimbedPaper ? L('爬出(Q)','CLIMB OUT(Q)') : L('取纸(Q)','TAKE PAPER(Q)');
       else if (p.charging) chip = p.charging.push ? '推门! X撤' : ({ wire: '撬锁', ladder: '翻墙', poke: '捅门', bonk: '拍晕', knock: '拍门', sniff: '嗅闻', paper: '递纸', clear: '疏通', takePaper: '取纸', climbOut: '爬出', wash: '洗手', punch: '出拳!', enterStall: '进入' }[p.charging.type] || p.charging.type) + '…';
       if (chip) A.bubble(ctx, p.x, p.y + 44, chip, { size: 10, bg: '#26221ADD', border: p.charging && p.charging.push ? '#EF4444' : '#8A5A3B' });
       // 排便进度条
@@ -1260,15 +1318,35 @@ if (typeof window !== 'undefined') (function () {
     for (const o of onomats) { if (o.fm !== undefined && o.fm !== viewMap || !vis(o.x, o.y, 80)) continue; A.onomat(ctx, o); }
     // 引导提示（键盘/触屏上下文提示）
     const hint = (() => {
-      if (sim.phase === 'prep') return 'WASD/摇杆 自由走动 · 铃响后走到右侧出口';
-      if (viewMap === 0) return '→ 走向教室出口';
-      if (viewMap === 1) return 'Q 拾道具 · P 出拳 · → 走到厕所门';
-      if (you.state === 'post') return '1 喊话 · 2 破罐(+5s) · 3 光屁股出门';
-      if (you.naked) return 'Q 取纸/翻入 · R 洗手(+5s) · 10s 内解决';
-      if (you.charging && you.charging.push) return 'X 松手保命！(主任间有咳嗽预警)';
-      return 'Q 交互 · E 嗅闻/涡轮 · F 道具 · R 冲水 · P 出拳';
+      if (sim.phase === 'prep') return TXT.hintPrep;
+      if (viewMap === 0) return TXT.hintMap0;
+      if (viewMap === 1) return TXT.hintMap1;
+      if (you.state === 'post') return TXT.hintPost;
+      if (you.naked) return TXT.hintNaked;
+      if (you.charging && you.charging.push) return TXT.hintPush;
+      return TXT.hintGeneral;
     })();
     A.bubble(ctx, cam.x, tp + vh - 18, hint, { size: 11, bg: '#1F1A17DD', border: '#FDE047' });
+    const tipEl = document.getElementById('tipbar'); if (tipEl) tipEl.textContent = hint;
+    // ── 就近交互提示（不按键也能知道 Q 会做什么）──
+    if (!you.final && viewMap === you.mapId) {
+      let nt = null, nd = 1e9;
+      for (const it of sim.items) if (!it.taken && it.mapId === viewMap) { const d = dist(you, it); if (d < nd) { nd = d; nt = it; } }
+      if (nt && nd <= NUM.reach) A.bubble(ctx, nt.x, nt.y - 24, L('Q 拾取 ', 'Q PICK ') + (LANG==='en'?({mask:'MASK',broom:'BROOM',wire:'WIRE',ladder:'LADDER',plunger:'PLUNGER',paper:'PAPER',comic:'COMIC',soda:'SODA',poster:'FAKE SIGN'}[nt.kind]||nt.kind):ITEM_DEFS[nt.kind].name), { size: 10, bg:'#26221ADD', border:'#4ADE80' });
+      if (viewMap === 2) {
+        for (const st of sim.stalls) {
+          const d = dist(you, st.doorPt); if (d > NUM.reach || !vis(st.x, st.y, 130)) continue;
+          let msg = '';
+          if (st.occ === 'dean') msg = LANG==='en'?'⚠ DEAN? Q = RISK':'⚠ 疑似主任 · Q 有风险';
+          else if (st.occ && st.occ !== you) msg = st.obstacle ? (LANG==='en'?'Q HARASS/RAID':'Q 骚扰/翻入') : (LANG==='en'?'Q HARASS (RED)':'Q 骚扰(有人)');
+          else if (st.obstacle) msg = LANG==='en'?'Q CLEAR (TOOL)':'Q 清障(需工具)';
+          else if (st.hasPaper) msg = LANG==='en'?'Q ENTER (PAPER ✓)':'Q 进入(有纸✓)';
+          else msg = LANG==='en'?'Q ENTER (NO PAPER)':'Q 进入(没纸!)';
+          A.bubble(ctx, st.x + st.w/2, st.y - 34, msg, { size: 10, bg:'#1F1A17DD', border: st.occ==='dean'?'#EF4444':'#FDE047' });
+        }
+        if (you.naked && dist(you, SINK) <= NUM.reach) A.bubble(ctx, SINK.x, SINK.y - 50, LANG==='en'?'R WASH · CLASSY +5s':'R 洗手 · 优雅 +5s', { size: 10, bg:'#1F1A17DD', border:'#38BDF8' });
+      }
+    }
 
     drawPfx(dtSec || 0.016);
     if (sim.dean.active && viewMap === 2) { ctx.fillStyle = PAL.deanFog + '22'; ctx.fillRect(l, tp, vw, vh); }
@@ -1276,8 +1354,8 @@ if (typeof window !== 'undefined') (function () {
   }
 
   function updateHud() {
-    document.getElementById('timer').textContent = sim.phase === 'prep' ? `准备 ${Math.ceil(sim.prepLeft / TICK)}s` : `${Math.max(0, Math.ceil((NUM.bells.cap - sim.t) / TICK))}s`;
-    document.getElementById('dbf').textContent = '💩大肠翻滚';
+    document.getElementById('timer').textContent = sim.phase === 'prep' ? `${TXT.prep} ${Math.ceil(sim.prepLeft / TICK)}s` : `${Math.max(0, Math.ceil((NUM.bells.cap - sim.t) / TICK))}s`;
+    document.getElementById('dbf').textContent = TXT.dbf;
     const eb = document.getElementById('ebar'); eb.style.width = clamp(you.endurance, 0, 100) + '%';
     eb.style.background = you.endurance > 50 ? '#4ade80' : you.endurance > 30 ? '#fbbf24' : '#ef4444';
     document.getElementById('etxt').textContent = Math.max(0, Math.ceil(you.endurance));
@@ -1306,10 +1384,10 @@ if (typeof window !== 'undefined') (function () {
         return b.final.time - a.final.time;
       });
       const medal = ['🥇', '🥈', '🥉'];
-      return list.map((p, i) => `<div class="row ${p.id === 0 ? 'me' : ''}">${medal[i] || ''} ${p.name} <b>${p.final.kind === 'done' ? p.final.time.toFixed(1) + 's' : p.final.kind === 'blowout' ? '炸裆' : '被抓'}</b></div>`).join('');
+      return list.map((p, i) => `<div class="row ${p.id === 0 ? 'me' : ''}">${medal[i] || ''} ${p.name} <b>${p.final.kind === 'done' ? p.final.time.toFixed(1) + 's' : p.final.kind === 'blowout' ? TXT.blow : TXT.caught}</b></div>`).join('');
     };
     document.getElementById('boards').innerHTML =
-      `<div class="board"><h3>💩 屎王榜 · 下课总排名</h3>${mk()}</div>`;
+      `<div class="board"><h3>${TXT.board}</h3>${mk()}</div>`;
   }
   document.getElementById('btnAgain').addEventListener('click', () => location.reload());
 

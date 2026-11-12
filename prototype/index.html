@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>课间特急：厕所攻防战 v0.1</title>
+<title>TOILET RUSH · 课间特急</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; background: #1a1812; font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; overflow: hidden; touch-action: none; }
@@ -64,6 +64,33 @@
   .row { padding: 3px 0; font-size: 15px; }
   .row.me { color: #ffd93d; font-weight: 900; }
   #btnAgain { margin-top: 20px; padding: 12px 36px; font-size: 17px; font-weight: 900; background: #ffd93d; border: none; border-radius: 10px; cursor: pointer; }
+
+  /* 按键/UI 美化：木牌按钮、按下反馈、技能提示 */
+  #hud { background: linear-gradient(#2b241b, #1b1710); border-bottom: 3px solid #5f3a24; box-shadow: 0 2px 10px #0008; }
+  #timer { text-shadow: 0 0 8px #ffd93d88, 2px 2px 0 #000; }
+  #dbf { padding: 2px 8px; border: 1px solid #ffffff22; border-radius: 6px; background: #00000033; }
+  .itm { background: linear-gradient(#ffffff22, #00000044); text-shadow: 1px 1px 0 #000; }
+  #postUI button, #btnAgain, .abtn, #btnRun, #btnP, #btnR {
+    box-shadow: inset 0 2px 0 #ffffff33, inset 0 -3px 0 #00000044, 0 4px 0 #00000055, 0 6px 12px #0008;
+    text-shadow: 1px 2px 0 #0009; transition: transform .08s, filter .08s;
+  }
+  #postUI button:active, #btnAgain:active, .abtn:active, #btnRun:active, #btnP:active, #btnR:active { transform: translateY(3px); box-shadow: inset 0 2px 0 #0004; filter: brightness(1.25); }
+  #btnShout { background: linear-gradient(#fde047, #d97706); color: #1f1a17; }
+  #btnNaked { background: linear-gradient(#f9a8d4, #be185d); color: #fff; }
+  #btnBreak { background: linear-gradient(#f87171, #991b1b); color: #fff; }
+  .abtn { background: radial-gradient(circle at 35% 30%, #ffffff2e, #ffffff12 60%, #00000033); }
+  #btnX { background: radial-gradient(circle at 35% 30%, #fca5a5, #b91c1c); }
+  #btnP { background: linear-gradient(#fdba74, #c2410c); color: #fff; }
+  #btnR { background: linear-gradient(#a5f3fc, #0e7490); color: #fff; }
+  #btnAgain { background: linear-gradient(#fde047, #b45309); color: #1f1a17; }
+  .banner { box-shadow: 0 4px 0 #0008, 0 8px 20px #0009; border: 2px solid #ffffff22; text-shadow: 1px 2px 0 #000; }
+  .board { background: linear-gradient(#ffffff18, #00000055); border: 3px solid #8a5a3b; box-shadow: 0 8px 24px #000a; }
+  .row { border-bottom: 1px dashed #ffffff22; }
+  #endUI h1 { text-shadow: 0 0 18px #ffd93d99, 3px 3px 0 #000; }
+  /* 技能/道具提示条（画布上方） */
+  #tipbar { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); pointer-events: none;
+    background: #1f1a17dd; color: #fff7ed; border: 2px solid #fde047; border-radius: 10px;
+    padding: 4px 14px; font-size: 12px; font-weight: 700; white-space: nowrap; z-index: 6; box-shadow: 0 4px 12px #0008; }
 </style>
 </head>
 <body>
@@ -77,27 +104,28 @@
   </div>
   <div id="cvwrap">
     <canvas id="cv" width="1500" height="620"></canvas>
-    <div id="portraitTip">横屏体验更佳 · Portrait mode</div>
+    <div id="portraitTip">LANDSCAPE RECOMMENDED · 横屏更佳</div>
     <div id="banners"></div>
+    <div id="tipbar">Q 交互 · E 嗅闻/涡轮 · F 道具 · P 出拳</div>
     <div id="postUI">
-      <button id="btnShout">📢 喊话要纸！</button>
-      <button id="btnNaked">🩲 光屁股出门找纸/洗手</button>
-      <button id="btnBreak">💩 破罐破摔(+5s)</button>
+      <button id="btnShout"id="btnShout" data-i18n="shout">📢 喊话要纸！</button>
+      <button id="btnNaked" data-i18n="btnNaked">🩲 光屁股出门找纸/洗手</button>
+      <button id="btnBreak" data-i18n="btnBreak">💩 破罐破摔(+5s)</button>
     </div>
     <div id="touch">
       <div id="joy"><div id="knob"></div></div>
-      <button id="btnRun">走</button>
-      <button id="btnP" style="position:absolute;left:160px;bottom:124px;width:56px;height:32px;border-radius:8px;border:2px solid #ffffff44;background:#ffffff1c;color:#fff;font-size:12px;font-weight:900;pointer-events:auto">出拳</button>
-      <button id="btnR" style="position:absolute;left:160px;bottom:80px;width:56px;height:32px;border-radius:8px;border:2px solid #ffffff44;background:#ffffff1c;color:#fff;font-size:12px;font-weight:900;pointer-events:auto">冲水</button>
-      <button class="abtn" id="btnQ">交互</button>
-      <button class="abtn" id="btnE">技能</button>
-      <button class="abtn" id="btnF">道具</button>
-      <button class="abtn" id="btnX">取消</button>
+      <button id="btnRun" data-i18n="btnRun">走</button>
+      <button id="btnP" style="position:absolute;left:160px;bottom:124px;width:56px;height:32px;border-radius:8px;border:2px solid #ffffff44;background:#ffffff1c;color:#fff;font-size:12px;font-weight:900;pointer-events:auto"data-i18n="btnPunch">出拳</button>
+      <button id="btnR" style="position:absolute;left:160px;bottom:80px;width:56px;height:32px;border-radius:8px;border:2px solid #ffffff44;background:#ffffff1c;color:#fff;font-size:12px;font-weight:900;pointer-events:auto"data-i18n="btnFlush">冲水</button>
+      <button class="abtn" id="btnQ" data-i18n="btnInteract">交互</button>
+      <button class="abtn" id="btnE" data-i18n="btnSkill">技能</button>
+      <button class="abtn" id="btnF" data-i18n="btnItem">道具</button>
+      <button class="abtn" id="btnX" data-i18n="btnCancel">取消</button>
     </div>
     <div id="endUI">
-      <h1>下课结束！</h1>
+      <h1 id="endTitle">下课结束！</h1>
       <div id="boards"></div>
-      <button id="btnAgain">再来一局</button>
+      <button id="btnAgain" data-i18n="again">再来一局</button>
     </div>
   </div>
 </div>
