@@ -927,7 +927,7 @@ if (typeof window !== 'undefined') (function () {
         case 'climbIn': { const st = sim.stalls[ev.idx]; float(st.doorPt.x, st.doorPt.y - 30, '翻进去了！别惊动里面', '#c084fc'); banner('梯子架好 → 取纸 → 原路爬出', 'warn', 2); break; }
         case 'climbOut': { float(p.x, p.y - 30, '爬出来！干净完成', '#86efac'); banner('神不知鬼不觉', 'ok', 1.6); break; }
         case 'raidFail': float(p.x, p.y - 40, '里面没纸/没人了…', '#fca5a5'); break;
-        case 'switchMap': if (ev.pid === 0) { banner(`🚪 进入【${MAPS[ev.to].name}】`, 'ok', 1.2); beep(150, .12, 'sine', .07); } break;
+        case 'switchMap': if (ev.pid === 0) { cam.x = you.x; cam.y = you.y; banner(`🚪 进入【${MAPS[ev.to].name}】`, 'ok', 1.2); beep(150, .12, 'sine', .07); } break;
         case 'punchHit': { const v = sim.players[ev.vid]; if (PFX) spawnPfx(PFX.cartoonPow, v.x, v.y - 16, { text: 'POW!', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, v.mapId, 0.9); float(v.x, v.y - 26, `砰！(揍${ev.beaten}/8)`, '#fdba74'); onomat(v.x, v.y - 44, '砰！', PAL.onomat); addFx(v.x, v.y, 'ripple', '#fdba74', 6); beep(180, .08, 'square', .09); break; }
         case 'punchMiss': float(p.x, p.y - 30, '挥空了…', '#d1d5db'); break;
         case 'beatenOut': if (PFX) spawnPfx(PFX.cartoonPow, p.x, p.y, { text: 'K.O.!', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, p.mapId, 1.6); banner(`${(sim.players[ev.pid]||{}).name} 被打出屎了！！`, 'danger', 2.8); addFx(p.x, p.y, 'smoke', '#8d5a3a', 26); SND.blowout(); break;
@@ -1123,10 +1123,14 @@ if (typeof window !== 'undefined') (function () {
     const map = MAPS[you.mapId];
     const vw = cv.width, vh = cv.height;
     // 摄像机跟随（MAP-INTERACTION §3.2：指数平滑 + 死区 + 边界钳制；图小于视口则居中）
-    const tx = you.final && you.mapId !== undefined ? you.x : you.x + you.dir * 30;
+    const tx = you.final ? you.x : you.x + you.dir * 40; // 朝向预偏移 40px
     const ty = you.y;
+    // 80px 死区：玩家在镜头中心 80px 内不推动镜头（防小碎步抖屏）
+    const dx = tx - cam.x, dy = ty - cam.y;
+    const goalX = Math.abs(dx) > 80 ? tx - Math.sign(dx) * 80 : cam.x;
+    const goalY = Math.abs(dy) > 80 ? ty - Math.sign(dy) * 80 : cam.y;
     const k = 1 - Math.pow(0.88, dtSec * 60);
-    cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k;
+    cam.x += (goalX - cam.x) * k; cam.y += (goalY - cam.y) * k;
     // 视口中心对准的"世界坐标"：图小于视口时让图居中(cam=图中心)；图大于视口时钳制跟随
     cam.x = map.W <= vw ? map.W / 2 : clamp(cam.x, vw / 2, map.W - vw / 2);
     cam.y = map.H <= vh ? map.H / 2 : clamp(cam.y, vh / 2, map.H - vh / 2);
@@ -1184,6 +1188,7 @@ if (typeof window !== 'undefined') (function () {
     // ── 图内道具 ──
     for (const it of sim.items) {
       if (it.taken || it.mapId !== you.mapId) continue;
+      if (it.x < cam.x - cv.width / 2 - 20 || it.x > cam.x + cv.width / 2 + 20 || it.y < cam.y - cv.height / 2 - 20 || it.y > cam.y + cv.height / 2 + 20) continue;
       ctx.fillStyle = ITEM_DEFS[it.kind].color;
       ctx.beginPath(); ctx.arc(it.x, it.y, 8, 0, 7); ctx.fill();
       ctx.strokeStyle = '#555'; ctx.stroke();
@@ -1193,6 +1198,7 @@ if (typeof window !== 'undefined') (function () {
     // 玩家
     for (const p of sim.players) {
       if (p.mapId !== you.mapId) continue; // 跨图零可见（渲染层）
+      if (p.x < cam.x - cv.width / 2 - 60 || p.x > cam.x + cv.width / 2 + 60 || p.y < cam.y - cv.height / 2 - 60 || p.y > cam.y + cv.height / 2 + 60) continue; // 视口外 60px 缓冲
       if (p.atStall >= 0 && p.final) { } // 已离场
       const x = p.x, y = p.y;
       ctx.globalAlpha = p.final ? 0.35 : 1;
@@ -1269,6 +1275,7 @@ if (typeof window !== 'undefined') (function () {
     // ── 特效（仅当前图）──
     for (const e of fx) {
       if (e.fm !== undefined && e.fm !== you.mapId) continue;
+      if (e.x < cam.x - cv.width / 2 - 80 || e.x > cam.x + cv.width / 2 + 80) continue;
       ctx.globalAlpha = clamp(e.life, 0, 1);
       const age = 1 - Math.max(0, e.life);
       if (e.kind.startsWith('sonar')) {
