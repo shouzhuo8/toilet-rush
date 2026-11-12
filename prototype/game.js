@@ -944,7 +944,7 @@ if (typeof window !== 'undefined') (function () {
         case 'switchMap': if (ev.pid === 0) { cam.x = you.x; cam.y = you.y; banner(`🚪 进入【${MAPS[ev.to].name}】`, 'ok', 1.2); beep(150, .12, 'sine', .07); } break;
         case 'punchHit': { const v = sim.players[ev.vid]; if (PFX) spawnPfx(PFX.cartoonPow, v.x, v.y - 16, { text: '砰！', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, v.mapId, 0.9); float(v.x, v.y - 26, `砰！(揍${ev.beaten}/8)`, '#fdba74'); onomat(v.x, v.y - 44, '砰！', PAL.onomat); addFx(v.x, v.y, 'ripple', '#fdba74', 6); beep(180, .08, 'square', .09); break; }
         case 'punchMiss': float(p.x, p.y - 30, '挥空了…', '#d1d5db'); break;
-        case 'beatenOut': if (PFX) spawnPfx(PFX.cartoonPow, p.x, p.y, { text: '被打出屎！', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, p.mapId, 1.6); banner(`${(sim.players[ev.pid]||{}).name}${' 被打出屎了！！'}`, 'danger', 2.8); addFx(p.x, p.y, 'smoke', '#8d5a3a', 26); SND.blowout(); break;
+        case 'beatenOut': if (PFX) spawnPfx(PFX.cartoonPow, p.x, p.y, { text: '被打出屎！', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, p.mapId, 1.6); banner(`${(sim.players[ev.pid]||{}).name} 被打出屎了！！`, 'danger', 2.8); addFx(p.x, p.y, 'smoke', '#8d5a3a', 26); SND.blowout(); break;
         case 'washDone': { uiSkill('wash'); float(p.x, p.y - 30, '洗手！优雅结束(+5s)', '#a5f3fc'); banner('讲卫生 · 优雅结束', 'ok', 1.8); break; }
         case 'shout': float(p.x, p.y - 40, '谁有纸！！', '#fde047'); SND.noise(); break;
         case 'paperDone': uiSkill('paper'); banner(`${p.name} 递纸！人情+`, 'ok', 2); break;
@@ -1312,7 +1312,7 @@ if (typeof window !== 'undefined') (function () {
   }
 
   function updateHud() {
-    document.getElementById('timer').textContent = sim.phase === 'prep' ? `${'准备'} ${Math.ceil(sim.prepLeft / TICK)}s` : `${Math.max(0, Math.ceil((NUM.bells.cap - sim.t) / TICK))}s`;
+    document.getElementById('timer').textContent = sim.phase === 'prep' ? `准备 ${Math.ceil(sim.prepLeft / TICK)}s` : `${Math.max(0, Math.ceil((NUM.bells.cap - sim.t) / TICK))}s`;
     document.getElementById('dbf').textContent = '💩大肠翻滚';
     const eb = document.getElementById('ebar'); eb.style.width = clamp(you.endurance, 0, 100) + '%';
     eb.style.background = you.endurance > 50 ? '#4ade80' : you.endurance > 30 ? '#fbbf24' : '#ef4444';
@@ -1345,7 +1345,7 @@ if (typeof window !== 'undefined') (function () {
       return list.map((p, i) => `<div class="row ${p.id === 0 ? 'me' : ''}">${medal[i] || ''} ${p.name} <b>${p.final.kind === 'done' ? p.final.time.toFixed(1) + 's' : p.final.kind === 'blowout' ? '炸裆' : '被抓'}</b></div>`).join('');
     };
     document.getElementById('boards').innerHTML =
-      `<div class="board"><h3>${'💩 屎王榜 · 下课总排名'}</h3>${mk()}</div>`;
+      `<div class="board"><h3>💩 屎王榜 · 下课总排名</h3>${mk()}</div>`;
   }
   document.getElementById('btnAgain').addEventListener('click', () => location.reload());
 

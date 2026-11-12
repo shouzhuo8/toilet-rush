@@ -200,7 +200,7 @@
   if (timerEl) {
     const mo = new MutationObserver(() => {
       if (bellFired || !timerEl.textContent) return;
-      if (!/准备|READY/.test(timerEl.textContent) && /\d/.test(timerEl.textContent)) {
+      if (!/准备/.test(timerEl.textContent) && /\d/.test(timerEl.textContent)) {
         bellFired = true;
         say('叮铃铃——', '下课！！冲啊——往右走出教室，穿过走廊，冲进厕所！别在路上挨揍！', { urgent: true, hold: 3600 });
         tip('🏃 目标：走过出口 → 走廊 → 厕所门 → 抢一个没人的隔间', 6000);
