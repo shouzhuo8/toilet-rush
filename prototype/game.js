@@ -863,6 +863,7 @@ if (typeof window !== 'undefined') (function () {
 
   /* ---- 事件表现 ---- */
   function consumeEvents() {
+    curMapFx = you.mapId; // 切图首帧即按新图给特效打标
     for (const ev of sim.events) {
       const p = sim.players[ev.pid] || null;
       switch (ev.type) {
@@ -1078,8 +1079,9 @@ if (typeof window !== 'undefined') (function () {
     const ty = you.y;
     const k = 1 - Math.pow(0.88, dtSec * 60);
     cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k;
-    cam.x = map.W <= vw ? (map.W - vw) / 2 : clamp(cam.x, vw / 2, map.W - vw / 2);
-    cam.y = map.H <= vh ? (map.H - vh) / 2 : clamp(cam.y, vh / 2, map.H - vh / 2);
+    // 视口中心对准的"世界坐标"：图小于视口时让图居中(cam=图中心)；图大于视口时钳制跟随
+    cam.x = map.W <= vw ? map.W / 2 : clamp(cam.x, vw / 2, map.W - vw / 2);
+    cam.y = map.H <= vh ? map.H / 2 : clamp(cam.y, vh / 2, map.H - vh / 2);
     curMapFx = you.mapId;
   }
   function drawConnZone(c, active) {
