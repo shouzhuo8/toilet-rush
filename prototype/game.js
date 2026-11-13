@@ -24,12 +24,12 @@ const NUM = {
   stall: { obstacle: 0.35, paper: 0.70 },
   bells: { pre: s(150), preMult: 1.5, cap: s(480), softAt: 3, softT: s(120), softMult: 2.0 },
   post: { autoBreak: s(15), penalty: s(5), autoPenalty: s(8), washPenalty: s(5), nakedMult: 0.6, washGuide: s(1.5), takePaper: s(0.5), climbPaper: s(1.5), climbOut: s(0.8) },
-  sniff: { errBare: 0.10, errMask: 0.15, infect: 0.45, rate: 0.30, range: 52 },
+  sniff: { errBare: 0.10, errMask: 0.15, infect: 0.45, rate: 0.30, range: 240 }, // 嗅闻半径=厕所内通用 reach
   soda: { dur: s(20), mult: 0.5 },
-  punch: { guide: s(0.4), cd: s(3), dmg: 4, kb: 72, kbDur: s(0.2), range: 42, koLine: 8 }, // 裁决#20 互殴：击退不硬直
+  punch: { guide: s(0.4), cd: s(3), dmg: 4, kb: 72, kbDur: s(0.2), range: 120, koLine: 8 }, // 拳程 42→120 // 裁决#20 互殴：击退不硬直
   splash: { broom: 0.30, dmg: 5 },
-  actR: 48, pickR: 26, // 基础交互/拾取半径
-  reach: 170, // 厕所内跨区交互半径（入口→各隔间门；与 ARCH-13.2 的 L1 感知半径 15m 同量级）
+  actR: 90, pickR: 56, // 基础交互/拾取半径（裁决#25 放大：站到附近即可）
+  reach: 240, // 厕所内跨区交互半径（裁决#25：170→240，隔间不再需要对很久）（入口→各隔间门；与 ARCH-13.2 的 L1 感知半径 15m 同量级）
 };
 
 /* ================= 工具 ================= */
@@ -68,7 +68,8 @@ const CONNECTIONS = [
 const STALLS = [ // map2 坐标（上排 3 间 y=140，下排 2 间 y=520）
   { x: 300, y: 200 }, { x: 780, y: 200 }, { x: 1260, y: 200 },
   { x: 540, y: 780 }, { x: 1020, y: 780 },
-].map((u, i) => ({ idx: i, mapId: 2, x: u.x, y: u.y, w: 110, h: 110, doorPt: { x: u.x + 55, y: u.y - 30 }, inPt: { x: u.x + 55, y: u.y + 55 }, occ: null, occId: 0, occKind: null, obstacle: null, hasPaper: false, harass: 0, lastH: -9999, lockBy: -1, lockUntil: 0, fakeOcc: null, fakeUntil: 0 }));
+].map((u, i) => ({ idx: i, mapId: 2, x: u.x, y: u.y, w: 110, h: 110, doorPt: { x: u.x + 55, y: u.y - 60 }, inPt: { x: u.x + 55, y: u.y + 55 }, // 交互点=门前走廊地面（更易站到）
+  occ: null, occId: 0, occKind: null, obstacle: null, hasPaper: false, harass: 0, lastH: -9999, lockBy: -1, lockUntil: 0, fakeOcc: null, fakeUntil: 0 }));
 const SINK = { x: 1500, y: 560, mapId: 2 };
 const SPAWNS = [0, 1, 2, 3, 4].map(i => ({ x: 170, y: 230 + i * 100 })); // map0 西墙纵向一列：全员到东门等距（公平裁决#23）
 const ROUTES = { // map1 内分段路径（西井→东路→东井）
@@ -981,8 +982,8 @@ if (typeof window !== 'undefined') (function () {
     if (k === 'q') doInteract();
     if (k === 'e') doSkill();
     if (k === 'f') doItem();
-    if (k === 'r') doFlushFake();
     if (k === 'p') doPunch();
+    if (k === 'r') { const a = scanContextActions().find(x => ['wash','flush'].includes(x.key)); if (a) a.run(); else doFlushFake(); }
     if (k === 'x' || k === 'escape') doCancel();
     if (k === '1' && you.state === 'post') sim.queue(0, 'shout');
     if (k === '2' && you.state === 'post') sim.queue(0, 'break');
@@ -1080,43 +1081,114 @@ if (typeof window !== 'undefined') (function () {
     if (best && bd <= NUM.sniff.range) sim.queue(0, 'sniff', { idx: best.idx });
     else float(you.x, you.y - 40, '要靠近隔间门嗅闻', '#fca5a5');
   }
-  function doInteract() {
-    if (you.final || you.charging || you.state === 'relief' || you.state === 'post') return;
-    if (you.naked) { doNakedInteract(); return; }
-    // 有人隔间：红门优先走既定闯入/骚扰流程，绝不"直接进"
-    let stNear = null, sd = 1e9;
-    for (const s2 of sim.stalls) { const d = dist(you, s2.doorPt); if (d < sd) { sd = d; stNear = s2; } }
-    if (stNear && sd <= NUM.reach && stNear.occ && !you.naked) {
-      if (stNear.occ !== 'dean' && stNear.occ.post && you.items.includes('paper')) { sim.queue(0, 'paper', { idx: stNear.idx }); return; }
-      if (you.items.includes('wire')) sim.queue(0, 'wire', { idx: stNear.idx });
-      else if (you.items.includes('ladder')) sim.queue(0, 'ladder', { idx: stNear.idx });
-      else if (you.items.includes('broom')) sim.queue(0, 'poke', { idx: stNear.idx });
-      else if (you.items.includes('plunger')) sim.queue(0, 'bonk', { idx: stNear.idx });
-      else sim.queue(0, 'knock', { idx: stNear.idx });
-      return;
+  /* ---- 上下文交互系统（裁决#26）：扫描可用动作，显示专属浮动按钮 ---- */
+  function scanContextActions() {
+    const acts = [];
+    if (you.final || you.charging) return acts;
+    // 道具拾取
+    for (const it of sim.items) {
+      if (it.taken || it.mapId !== you.mapId || dist(you, it) > NUM.pickR) continue;
+      acts.push({ key: 'pick', label: `捡 ${ITEM_DEFS[it.kind].name}`, icon: '🤲', run: () => sim.queue(0, 'pick', { id: it.id }), at: { x: it.x, y: it.y - 40 } });
     }
-    // 拾取
-    let best = null, bd = 1e9;
-    for (const it of sim.items) { if (it.taken) continue; const d = dist(you, it); if (d < bd) { bd = d; best = it; } }
-    if (best && bd <= NUM.pickR) { sim.queue(0, 'pick', { id: best.id }); return; }
-    // 隔间
-    let st = null; bd = 1e9;
-    for (const s2 of sim.stalls) { const d = dist(you, s2.doorPt); if (d < bd) { bd = d; st = s2; } }
-    if (st && bd <= NUM.actR + 26) {
-      if (st.occ && st.occ !== 'dean' && st.occ.post && you.items.includes('paper')) { sim.queue(0, 'paper', { idx: st.idx }); return; }
-      if (!st.occ) {
-        if (st.obstacle) { sim.queue(0, 'clear', { idx: st.idx }); return; }
-        sim.queue(0, 'enterStall', { idx: st.idx }); return;
+    if (you.state === 'post') {
+      acts.push({ key: 'nakedOut', label: '光屁股出门', icon: '🩲', run: () => sim.queue(0, 'nakedOut'), at: { x: you.x, y: you.y - 70 } });
+      return acts; // POST 态只有弹窗选项 + 出门
+    }
+    if (you.naked) {
+      for (const st of sim.stalls) {
+        if (dist(you, st.doorPt) > NUM.reach) continue;
+        if (st.occ && st.occ !== 'dean' && st.hasPaper && (you.items.includes('ladder') || you.items.includes('wire')))
+          acts.push({ key: 'raid', label: '翻进去拿纸', icon: '🪜', run: () => sim.queue(0, 'raidPaper', { idx: st.idx }), at: { x: st.doorPt.x, y: st.doorPt.y - 56 } });
+        else if (!st.occ && !st.obstacle && st.hasPaper)
+          acts.push({ key: 'takePaper', label: '拿卷纸', icon: '🧻', run: () => sim.queue(0, 'takePaper', { idx: st.idx }), at: { x: st.doorPt.x, y: st.doorPt.y - 56 } });
       }
-      // 红门：按持有武器
-      if (you.items.includes('wire')) sim.queue(0, 'wire', { idx: st.idx });
-      else if (you.items.includes('ladder')) sim.queue(0, 'ladder', { idx: st.idx });
-      else if (you.items.includes('broom')) sim.queue(0, 'poke', { idx: st.idx });
-      else if (you.items.includes('plunger')) sim.queue(0, 'bonk', { idx: st.idx });
-      else sim.queue(0, 'knock', { idx: st.idx });
-      return;
+      if (dist(you, SINK) <= NUM.reach) acts.push({ key: 'wash', label: '洗手收工(+5s)', icon: '🧼', run: () => sim.queue(0, 'wash'), at: { x: SINK.x, y: SINK.y - 60 } });
+      return acts;
     }
-    float(you.x, you.y - 40, '这里没什么可交互的', '#d1d5db');
+    if (you.state === 'relief') return acts; // 排便中：X 弃坑，无按钮
+    if (you.mapId !== 2) {
+      // 走廊：互殴
+      const foe = sim.players.find(q => !q.final && q.id !== 0 && q.mapId === you.mapId && dist(you, q) <= NUM.punch.range);
+      if (foe && sim.t >= you.beatCdUntil) acts.push({ key: 'punch', label: '出拳！', icon: '👊', run: () => sim.queue(0, 'punch', { id: foe.id }), at: { x: foe.x, y: foe.y - 64 } });
+      return acts;
+    }
+    // 厕所内
+    for (const st of sim.stalls) {
+      if (dist(you, st.doorPt) > NUM.reach) continue;
+      const at = { x: st.doorPt.x, y: st.doorPt.y - 56 };
+      if (st.occ && st.occ !== 'dean' && st.occ.post && you.items.includes('paper'))
+        acts.push({ key: 'paper', label: '递纸', icon: '🧻', run: () => sim.queue(0, 'paper', { idx: st.idx }), at });
+      if (!st.occ && !st.obstacle)
+        acts.push({ key: 'enter', label: st.hasPaper ? '开始拉屎(有纸)' : '开始拉屎(没纸!)', icon: '🚽', run: () => sim.queue(0, 'enterStall', { idx: st.idx }), at });
+      else if (!st.occ && st.obstacle && (you.items.includes('plunger') || st.obstacle === 'anaconda' && you.items.includes('broom')))
+        acts.push({ key: 'clear', label: st.obstacle === 'anaconda' ? '通巨蟒' : '清草莓塔', icon: '🪠', run: () => sim.queue(0, 'clear', { idx: st.idx }), at });
+      else if (st.occ) {
+        if (you.items.includes('wire')) acts.push({ key: 'wire', label: '铁丝撬锁', icon: '🔧', run: () => sim.queue(0, 'wire', { idx: st.idx }), at });
+        else if (you.items.includes('ladder')) acts.push({ key: 'ladder', label: '梯子翻墙', icon: '🪜', run: () => sim.queue(0, 'ladder', { idx: st.idx }), at });
+        else if (you.items.includes('broom')) acts.push({ key: 'poke', label: '扫把捅门', icon: '🧹', run: () => sim.queue(0, 'poke', { idx: st.idx }), at });
+        else if (you.items.includes('plunger')) acts.push({ key: 'bonk', label: '搋子拍晕', icon: '🪠', run: () => sim.queue(0, 'bonk', { idx: st.idx }), at });
+        else acts.push({ key: 'knock', label: '疯狂拍门', icon: '✊', run: () => sim.queue(0, 'knock', { idx: st.idx }), at });
+      }
+    }
+    // 嗅闻：最近门
+    let near = null, nd = 1e9;
+    for (const st of sim.stalls) { const d = dist(you, st.doorPt); if (d < nd) { nd = d; near = st; } }
+    if (near && nd <= NUM.sniff.range && you.sniffLeft > 0)
+      acts.push({ key: 'sniff', label: '闻一下是谁', icon: '👃', run: () => sim.queue(0, 'sniff', { idx: near.idx }), at: { x: near.doorPt.x, y: near.doorPt.y - 92 } });
+    // 洗手台（非光屁股也可洗手？不：洗手=优雅结束仅光屁股态）
+    // 互殴
+    const foe = sim.players.find(q => !q.final && q.id !== 0 && q.mapId === 2 && dist(you, q) <= NUM.punch.range);
+    if (foe && sim.t >= you.beatCdUntil) acts.push({ key: 'punch', label: '出拳！', icon: '👊', run: () => sim.queue(0, 'punch', { id: foe.id }), at: { x: foe.x, y: foe.y - 64 } });
+    // 憋气糖/假贴
+    if (you.items.includes('soda')) acts.push({ key: 'soda', label: '吃憋气糖', icon: '🥤', run: () => sim.queue(0, 'soda'), at: { x: you.x, y: you.y - 96 } });
+    if (you.items.includes('poster')) {
+      const tgt = near && nd <= NUM.reach ? near : null;
+      if (tgt) acts.push({ key: 'poster', label: '贴假指示', icon: '🏷️', run: () => sim.queue(0, 'poster', { idx: tgt.idx }), at: { x: you.x + 90, y: you.y - 96 } });
+    }
+    return acts;
+  }
+
+  // 世界内浮动上下文按钮（canvas 上层 DOM，pointer-events:auto 仅按钮本体）
+  const ctxBtns = [];
+  function renderContextButtons() {
+    const hostEl = document.getElementById('ctxbtns') || (() => { const d = document.createElement('div'); d.id = 'ctxbtns'; d.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:50;'; document.getElementById('cvwrap').appendChild(d); return d; })();
+    const acts = scanContextActions();
+    // 同步数量
+    while (ctxBtns.length > acts.length) { const b = ctxBtns.pop(); b.el.remove(); }
+    while (ctxBtns.length < acts.length) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.style.cssText = `pointer-events:auto;position:absolute;transform:translate(-50%,-100%);
+        padding:8px 14px;font-size:14px;font-weight:900;color:#1f1a17;white-space:nowrap;
+        background:linear-gradient(#fff7ed,#fbbf24);border:3px solid #5f3a24;border-radius:12px;
+        box-shadow:0 4px 0 #0008,0 6px 14px #0009;cursor:pointer;text-shadow:none;
+        transition:transform .08s;font-family:system-ui,"PingFang SC",sans-serif;`;
+      el.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+      let fired = false;
+      const trigger = (ev) => { ev.preventDefault(); const b = ctxBtns.find(x => x.el === el); if (b) { b.act.run(); pulse(b.act.key); } };
+      el.addEventListener('touchend', trigger, { passive: false });
+      el.addEventListener('click', (ev) => { if (fired) { fired = false; return; } trigger(ev); });
+      hostEl.appendChild(el);
+      ctxBtns.push({ el, act: null });
+    }
+    // 更新内容与位置（世界→屏幕）
+    const map = MAPS[viewMap];
+    for (let i = 0; i < acts.length; i++) {
+      const b = ctxBtns[i]; b.act = acts[i];
+      b.el.textContent = `${b.act.icon} ${b.act.label}`;
+      const sx = cv.width / 2 + (b.act.at.x - cam.x), sy = cv.height / 2 + (b.act.at.y - cam.y);
+      b.el.style.left = clamp(sx, 70, cv.width - 70) + 'px';
+      b.el.style.top = clamp(sy, 60, cv.height - 30) + 'px';
+      b.el.style.display = '';
+    }
+  }
+  function pulse(key) { /* 点击反馈：按钮已由 CSS active 处理 */ }
+
+  function doInteract() {
+    // Q 键 = 触发优先级最高的上下文按钮
+    const acts = scanContextActions();
+    if (acts.length) { acts[0].run(); return; }
+    float(you.x, you.y - 40, '靠近目标会出现操作按钮', '#d1d5db');
   }
 
   /* ---- POST UI ---- */
@@ -1378,7 +1450,7 @@ if (typeof window !== 'undefined') (function () {
     for (let i = fx.length - 1; i >= 0; i--) { const e = fx[i]; e.x += e.vx * dt; e.y += e.vy * dt; e.vx *= 0.94; e.vy *= 0.94; e.life -= dt; if (e.life <= 0) fx.splice(i, 1); }
     for (let i = floats.length - 1; i >= 0; i--) { floats[i].life -= dt; if (floats[i].life <= 0) floats.splice(i, 1); }
     for (let i = onomats.length - 1; i >= 0; i--) { onomats[i].life -= dt; onomats[i].t += dt; if (onomats[i].life <= 0) onomats.splice(i, 1); }
-    draw(now, dt); updateHud();
+    draw(now, dt); updateHud(); renderContextButtons();
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
