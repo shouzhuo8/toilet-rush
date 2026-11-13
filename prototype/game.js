@@ -202,7 +202,6 @@ class Sim {
     if (g.type === 'wire' || g.type === 'ladder' || g.type === 'climbPaper') { g.occId = this.stalls[g.target.idx].occId; }
     else if (g.type === 'poke' || g.type === 'bonk' || g.type === 'knock' || g.type === 'sniff' || g.type === 'paper') { g.occId = this.stalls[g.target.idx].occId; }
     this._ev('guideStart', { pid: p.id, act: g.type, dur: g.dur });
-    if (p.id === 0) this._ev('uiSkill', { pid: 0, key: ({ wire: 'wire', ladder: 'ladder', poke: 'broom', bonk: 'plunger', knock: 'knock', sniff: 'sniff', paper: 'paper', clear: 'clear', takePaper: 'takePaper', wash: 'wash', climbOut: 'climbOut' })[g.type] || g.type });
   }
   _abortGuide(p, g, reason) {
     p.charging = null;
@@ -451,7 +450,6 @@ class Sim {
         if (dist(p, v) > NUM.punch.range || p.mapId !== v.mapId) return fail('far');
         if (p.state !== 'idle') return fail('cond');
         p.beatCdUntil = this.t + NUM.punch.cd;
-        if (p.id === 0) this._ev('uiSkill', { pid: 0, key: 'punch' });
         this._startGuide(p, { type: 'punch', dur: NUM.punch.guide, target: { kind: 'player', id: v.id } });
         return;
       }
@@ -900,14 +898,11 @@ if (typeof window !== 'undefined') (function () {
   const seenTips = {};
   function ev0Tick() { return sim.t <= 2; }
   function tipOnce(key, zh, cls, dur) { if (seenTips[key]) return; seenTips[key] = 1; banner(zh, cls || 'ok', dur || 3.2); }
-  function uiSkill(k, extra) { if (window.UI) window.UI.skill(k, extra); }
-  function consumeEvents() {
+    function consumeEvents() {
     curMapFx = you.mapId; // 切图首帧即按新图给特效打标
     if (sim.phase === 'prep' && ev0Tick()) tipOnce('start', '💡 铃前可在教室自由走动，出不去门。先熟悉按键！', 'big', 4.5);
     for (const ev of sim.events) {
       const p = sim.players[ev.pid] || null;
-      if (ev.type === 'uiSkill' && ev.pid === 0) uiSkill(ev.key);
-      if (ev.type === 'pick' && ev.pid === 0 && window.UI) window.UI.itemToast(ev.kind);
       if (ev.type === 'switchMap' && ev.to === 2 && ev.pid === 0) tipOnce('toilet', '💡 5 间隔间：绿灯空房可进，红灯要闯；卷纸挂墙是明牌', 'warn', 4.2);
       if (ev.type === 'postStuck' && ev.pid === 0) tipOnce('post', '💡 没纸？光屁股出门去别间取纸，或洗手台优雅结束(+5s)', 'warn', 4.2);
       if (ev.type === 'punchHit' && ev.vid === 0) tipOnce('punched', '💡 挨揍 8 次会被打出屎！P 键还手，击退不硬直', 'danger', 3.8);
@@ -918,7 +913,7 @@ if (typeof window !== 'undefined') (function () {
           if (ev.kind === 'pre') { banner('上课预备铃！忍耐流失 ×1.5', 'warn', 2.5); SND.bell(); }
           if (ev.kind === 'soft') { banner('上课铃倒计时！流失 ×2', 'danger', 3); SND.bell(); }
           break;
-        case 'deanIn': uiSkill('dean'); banner('！！主任来了！！', 'danger', 2.6); SND.deanIn(); if (PFX) spawnPfx(PFX.exclamation, 550, 300, { palette: ['#1a0e14', '#7f1d1d', '#dc2626', '#fca5a5', '#fff7ed'] }); break;
+        case 'deanIn': banner('！！主任来了！！', 'danger', 2.6); SND.deanIn(); if (PFX) spawnPfx(PFX.exclamation, 550, 300, { palette: ['#1a0e14', '#7f1d1d', '#dc2626', '#fca5a5', '#fff7ed'] }); break;
         case 'deanOut': banner('主任哼着歌走了~', 'ok', 2); SND.deanOut(); break;
         case 'deanAnger': banner(`${(sim.players[ev.pid] || {}).name || '?'} 被主任没收道具轰出厕所！`, 'warn', 2.5); addFx(1150, 320, 'smoke', '#b91c1c', 22); SND.anger(); break;
         case 'harass': { const st = sim.stalls[ev.idx]; if (PFX) spawnPfx(PFX.hitSpark, st.doorPt.x, st.doorPt.y - 10, {}, 2, 0.8); float(st.doorPt.x - 20, st.doorPt.y - 14, `骚扰 ${ev.val}/3`, '#fdba74'); SND.noise(); break; }
@@ -934,22 +929,22 @@ if (typeof window !== 'undefined') (function () {
         case 'infect': float(p.x, p.y - 40, `被传染 -${ev.loss.toFixed(0)}`, '#a3e635'); break;
         case 'caught': banner('你被主任当场抓获……判负！', 'danger', 3); break;
         case 'postStuck': if (ev.pid === 0) showPostUI(true); float(p.x, p.y - 30, '没纸了！！光屁股出门找纸/洗手', '#fbbf24'); break;
-        case 'nakedOut': { uiSkill('naked'); if (ev.pid === 0) showPostUI(false); float(p.x, p.y - 30, '光着屁股出来了！', '#f472b6'); addFx(p.x, p.y, 'smoke', '#fbcfe8', 10); banner('10s 内：去有纸隔间取纸 / 洗手台优雅结束', 'warn', 2.4); break; }
-        case 'paperGot': { uiSkill('takePaper'); float(p.x, p.y - 30, '取到纸！', '#86efac'); if (!p.hasClimbedPaper) banner('体面人！', 'ok', 1.6); break; }
-        case 'climbIn': { uiSkill('raid'); const st = sim.stalls[ev.idx]; float(st.doorPt.x, st.doorPt.y - 30, '翻进去了！别惊动里面', '#c084fc'); banner('梯子架好 → 取纸 → 原路爬出', 'warn', 2); break; }
-        case 'climbOut': { uiSkill('climbOut'); float(p.x, p.y - 30, '爬出来！干净完成', '#86efac'); banner('神不知鬼不觉', 'ok', 1.6); break; }
+        case 'nakedOut': { if (ev.pid === 0) showPostUI(false); addFx(p.x, p.y, 'smoke', '#fbcfe8', 10); banner('10s 内：去有纸隔间取纸 / 洗手台优雅结束', 'warn', 2.4); break; }
+        case 'paperGot': { if (!p.hasClimbedPaper) banner('体面人！', 'ok', 1.6); break; }
+        case 'climbIn': { const st = sim.stalls[ev.idx]; banner('梯子架好 → 取纸 → 原路爬出', 'warn', 2); break; }
+        case 'climbOut': { banner('神不知鬼不觉', 'ok', 1.6); break; }
         case 'raidFail': float(p.x, p.y - 40, '里面没纸/没人了…', '#fca5a5'); break;
         case 'switchMap': if (ev.pid === 0) { cam.x = you.x; cam.y = you.y; banner(`🚪 进入【${MAPS[ev.to].name}】`, 'ok', 1.2); beep(150, .12, 'sine', .07); } break;
-        case 'punchHit': { const v = sim.players[ev.vid]; if (PFX) spawnPfx(PFX.cartoonPow, v.x, v.y - 16, { text: '砰！', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, v.mapId, 0.9); float(v.x, v.y - 26, `砰！(揍${ev.beaten}/8)`, '#fdba74'); onomat(v.x, v.y - 44, '砰！', PAL.onomat); addFx(v.x, v.y, 'ripple', '#fdba74', 6); beep(180, .08, 'square', .09); break; }
+        case 'punchHit': { const v = sim.players[ev.vid]; if (PFX) spawnPfx(PFX.cartoonPow, v.x, v.y - 16, { text: '砰！', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, v.mapId, 0.9); addFx(v.x, v.y, 'ripple', '#fdba74', 6); beep(180, .08, 'square', .09); break; }
         case 'punchMiss': float(p.x, p.y - 30, '挥空了…', '#d1d5db'); break;
         case 'beatenOut': if (PFX) spawnPfx(PFX.cartoonPow, p.x, p.y, { text: '被打出屎！', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, p.mapId, 1.6); banner(`${(sim.players[ev.pid]||{}).name} 被打出屎了！！`, 'danger', 2.8); addFx(p.x, p.y, 'smoke', '#8d5a3a', 26); SND.blowout(); break;
-        case 'washDone': { uiSkill('wash'); float(p.x, p.y - 30, '洗手！优雅结束(+5s)', '#a5f3fc'); banner('讲卫生 · 优雅结束', 'ok', 1.8); break; }
+        case 'washDone': { banner('讲卫生 · 优雅结束', 'ok', 1.8); break; }
         case 'shout': float(p.x, p.y - 40, '谁有纸！！', '#fde047'); SND.noise(); break;
-        case 'paperDone': uiSkill('paper'); banner(`${p.name} 递纸！人情+`, 'ok', 2); break;
+        case 'paperDone': banner(`${p.name} 递纸！人情+`, 'ok', 2); break;
         case 'pushStart': banner('推门中……听到动静可取消！(X)', 'warn', 2); beep(90, .3, 'sawtooth', .07); break;
         case 'pushCancel': banner('你缩回了手……保命要紧', 'ok', 1.6); break;
         case 'pushEmpty': float(1150, 400, '门后居然没人', '#ccc'); break;
-        case 'turbo': uiSkill('turbo'); float(p.x, p.y - 30, '涡轮增压！！', '#f472b6'); SND.noise(); if (PFX) spawnPfx(PFX.chargeUp, p.x, p.y - 30, {}, 2, 1.2); break;
+        case 'turbo': SND.noise(); if (PFX) spawnPfx(PFX.chargeUp, p.x, p.y - 30, {}, 2, 1.2); break;
         case 'cleared': float(sim.stalls[ev.idx].doorPt.x, sim.stalls[ev.idx].doorPt.y - 30, '疏通！', '#a7f3d0'); break;
         case 'splash': float(p.x, p.y - 30, '溅了一身 -5', '#a16207'); break;
         case 'pick': float(p.x, p.y - 24, `+${ITEM_DEFS[ev.kind].name}`, '#e5e7eb'); SND.pick(); break;
@@ -1012,6 +1007,8 @@ if (typeof window !== 'undefined') (function () {
     el.addEventListener('click', e => { if (fired) { fired = false; e.preventDefault(); return; } fn(); });
   };
   bindTap('btnQ', doInteract);
+  bindTap('btnS', () => { const a = scanContextActions().find(x => x.key === 'enter'); if (a) a.run(); });
+  bindTap('btnG', () => { const a = scanContextActions().find(x => x.key === 'pick'); if (a) a.run(); });
   bindTap('btnE', doSkill);
   bindTap('btnF', doItem);
   bindTap('btnX', doCancel);
@@ -1137,65 +1134,27 @@ if (typeof window !== 'undefined') (function () {
     return acts;
   }
 
-  // 世界内浮动上下文按钮（canvas 上层 DOM，pointer-events:auto 仅按钮本体）
-  const ctxBtns = [];
-  function renderContextButtons() {
-    const hostEl = document.getElementById('ctxbtns') || (() => { const d = document.createElement('div'); d.id = 'ctxbtns'; d.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:50;'; document.getElementById('cvwrap').appendChild(d); return d; })();
-    const acts = scanContextActions();
-    // 同步数量
-    while (ctxBtns.length > acts.length) { const b = ctxBtns.pop(); b.el.remove(); }
-    while (ctxBtns.length < acts.length) {
-      const el = document.createElement('button');
-      el.type = 'button';
-      el.style.cssText = `pointer-events:auto;position:absolute;transform:translate(-50%,-100%);
-        padding:8px 14px;font-size:14px;font-weight:900;color:#1f1a17;white-space:nowrap;
-        background:linear-gradient(#fff7ed,#fbbf24);border:3px solid #5f3a24;border-radius:12px;
-        box-shadow:0 4px 0 #0008,0 6px 14px #0009;cursor:pointer;text-shadow:none;
-        font-family:system-ui,"PingFang SC",sans-serif;`;
-      el.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
-      let fired = false;
-      const trigger = (ev) => { ev.preventDefault(); const b = ctxBtns.find(x => x.el === el); if (b) { b.act.run(); pulse(b.act.key); } };
-      el.addEventListener('touchend', trigger, { passive: false });
-      el.addEventListener('click', (ev) => { if (fired) { fired = false; return; } trigger(ev); });
-      hostEl.appendChild(el);
-      ctxBtns.push({ el, act: null });
-    }
-    // 更新内容与位置（世界→屏幕）。量化到 4px 网格 + 文本仅在变化时写入，消除抖动（裁决#28）
-    const CSSW = cv.clientWidth || cv.width, CSSH = cv.clientHeight || cv.height;
-    const kx = CSSW / cv.width, ky = CSSH / cv.height; // 逻辑→CSS 像素
-    const Q = 4;
-    for (let i = 0; i < acts.length; i++) {
-      const b = ctxBtns[i]; b.act = acts[i];
-      const txt = `${b.act.icon} ${b.act.label}`;
-      if (b.txt !== txt) { b.el.textContent = txt; b.txt = txt; }
-      const cvr = cv.getBoundingClientRect(), wr = hostEl.getBoundingClientRect();
-      const ox = cvr.left - wr.left, oy = cvr.top - wr.top;
-      const sx = ox + (cvr.width / 2) + ((b.act.at.x - cam.x)) * (cvr.width / cv.width);
-      const sy = oy + (cvr.height / 2) + ((b.act.at.y - cam.y)) * (cvr.height / cv.height);
-      const qx = Math.round(clamp(sx, 80, wr.width - 80) / Q) * Q;
-      const qy = Math.round(clamp(sy, 56, wr.height - 26) / Q) * Q;
-      if (b.qx !== qx) { b.el.style.left = qx + 'px'; b.qx = qx; }
-      if (b.qy !== qy) { b.el.style.top = qy + 'px'; b.qy = qy; }
-      if (b.el.style.display === 'none') b.el.style.display = '';
-    }
-  }
+  /* ---- 右侧按钮状态：出拳/蹲坑/拾取 常驻（灰=不可用），其余按需（裁决#31） ---- */
   function updateTouchButtons() {
     const acts = scanContextActions();
     const has = (keys) => acts.some(a => keys.includes(a.key));
-    const set = (id, show, label) => { const el = document.getElementById(id); if (!el) return; el.classList.toggle('show', show); if (label && el.textContent !== label) el.textContent = label; };
-    // 交互：有任何上下文动作才显示，并直接显示主动作名（如"开始拉屎"）
-    set('btnQ', acts.length > 0, acts.length ? acts[0].label.slice(0, 4) : '交互');
-    // 技能：嗅闻（次数>0且在厕所）或涡轮（排便中）
-    set('btnE', has(['sniff']) || (you.state === 'relief' && you.turboLeft > 0), you.state === 'relief' ? '涡轮' : '嗅闻');
-    // 道具：持消耗品才显示
-    set('btnF', has(['soda', 'poster']), has(['soda']) ? '憋气糖' : '假贴');
-    // 出拳：有敌在拳程且 CD 好
-    set('btnP', has(['punch']), '出拳');
-    // 取消：引导中 / 排便中 / 光屁股 / POST
-    set('btnX', !!you.charging || you.state === 'relief' || you.naked || you.state === 'post', you.charging ? (you.charging.push ? '松手' : '取消') : '弃坑');
+    const set = (id, state, label) => {
+      const el = document.getElementById(id); if (!el) return;
+      el.classList.toggle('show', state !== 'hide');
+      el.classList.toggle('dim', state === 'off');
+      if (!el.dataset) el.dataset = {};
+      if (label && el.dataset.label !== label) { el.textContent = label; el.dataset.label = label; }
+    };
+    set('btnP', has(['punch']) ? 'on' : 'off', sim.t < you.beatCdUntil ? `拳${Math.ceil((you.beatCdUntil - sim.t) / TICK)}` : '出拳');
+    set('btnS', has(['enter']) ? 'on' : 'off', '蹲坑');
+    set('btnG', has(['pick']) ? 'on' : 'off', '拾取');
+    const ctx = acts.find(a => !['punch', 'enter', 'pick'].includes(a.key));
+    set('btnQ', ctx ? 'on' : 'hide', ctx ? ctx.label.slice(0, 4) : '交互');
+    set('btnE', (has(['sniff']) || (you.state === 'relief' && you.turboLeft > 0)) ? 'on' : 'hide', you.state === 'relief' ? '涡轮' : '嗅闻');
+    set('btnF', has(['soda', 'poster']) ? 'on' : 'hide', has(['soda']) ? '憋气糖' : '假贴');
+    set('btnX', (you.charging || you.state === 'relief' || you.naked || you.state === 'post') ? 'on' : 'hide',
+        you.charging ? (you.charging.push ? '松手' : '取消') : '弃坑');
   }
-
-  function pulse(key) { /* 点击反馈：按钮已由 CSS active 处理 */ }
 
   function doInteract() {
     // Q 键 = 触发优先级最高的上下文按钮
@@ -1468,7 +1427,7 @@ if (typeof window !== 'undefined') (function () {
     for (let i = fx.length - 1; i >= 0; i--) { const e = fx[i]; e.x += e.vx * dt; e.y += e.vy * dt; e.vx *= 0.94; e.vy *= 0.94; e.life -= dt; if (e.life <= 0) fx.splice(i, 1); }
     for (let i = floats.length - 1; i >= 0; i--) { floats[i].life -= dt; if (floats[i].life <= 0) floats.splice(i, 1); }
     for (let i = onomats.length - 1; i >= 0; i--) { onomats[i].life -= dt; onomats[i].t += dt; if (onomats[i].life <= 0) onomats.splice(i, 1); }
-    draw(now, dt); updateHud(); renderContextButtons(); updateTouchButtons();
+    draw(now, dt); updateHud(); updateTouchButtons();
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
