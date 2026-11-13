@@ -14,8 +14,8 @@
     mint: '#BFE3DD', mintDark: '#8FC9C1', mintLine: '#6FAEA4',
     red: '#EF4444', green: '#22C55E', amber: '#F59E0B',
     blue: '#38BDF8', gold: '#FDE047', pink: '#F472B6', purple: '#C084FC',
-    poo: '#8D5A3A', pooHi: '#B07A4F', pooDk: '#5F3A24',
-    berry: '#F472B6', berryHi: '#FBCFE8', berryDk: '#BE185D',
+    poo: '#EAB308', pooHi: '#FACC15', pooDk: '#A16207', // 大便=黄色（邮件指令）
+    berry: '#FDE047', berryHi: '#FEF08A', berryDk: '#A16207', // 草莓塔层叠也是黄色粪便
   };
 
   function px(ctx, x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(I(x), I(y), Math.max(1, I(w)), Math.max(1, I(h))); }
@@ -563,182 +563,209 @@
 
   /* ---------- 隔间内第一视角（1000×620 设计坐标） ---------- */
   function stallInterior(ctx, o) {
-    // o = { w,h, t, st, p, harass, state, hasPaper, obstacle, idx, seed }
+    // 第一人称：蹲在坑上、面朝门口。1000×620 设计坐标，带单点透视（灭点在门中心）
     const W = o.w, H = o.h, t = o.t;
     const sx = W / 1000, sy = H / 620;
     ctx.save(); ctx.scale(sx, sy);
     const st = o.st, idx = o.idx || 0;
     const seed = (o.seed || 1) ^ (idx * 2654435761);
     const R = mulberry32(seed);
-
-    // ── 0. 墙面：瓷砖 + 白色墙裙 ──
-    ctx.fillStyle = '#CDEBE6'; ctx.fillRect(0, 0, 1000, 620);
-    for (let y = 0; y < 620; y += 26) for (let x = 0; x < 1000; x += 26) {
-      ctx.fillStyle = ((x / 26 | 0) + (y / 26 | 0)) % 2 ? '#BFE3DD' : '#CDEBE6';
-      ctx.fillRect(x, y, 25, 25);
-      ctx.fillStyle = 'rgba(111,174,164,.45)'; ctx.fillRect(x, y, 25, 1); ctx.fillRect(x, y, 1, 25);
-    }
-    // 墙裙（下 1/3）白瓷砖
-    ctx.fillStyle = '#F4FAF8'; ctx.fillRect(0, 400, 1000, 220);
-    for (let x = 0; x < 1000; x += 40) { ctx.fillStyle = 'rgba(180,200,196,.6)'; ctx.fillRect(x, 400, 1, 220); }
-    for (let y = 400; y < 620; y += 34) { ctx.fillStyle = 'rgba(180,200,196,.6)'; ctx.fillRect(0, y, 1000, 1); }
-    // 墙面污渍与霉斑
-    ctx.fillStyle = 'rgba(120,110,80,.18)';
-    for (let i = 0; i < 7; i++) { const px2 = R() * 900 + 50, py2 = R() * 380 + 20; ctx.beginPath(); ctx.ellipse(px2, py2, 14 + R() * 26, 8 + R() * 16, R() * 3, 0, 6.2832); ctx.fill(); }
-    // 通风窗（上方居中）
-    ctx.fillStyle = '#8FA9A4'; ctx.fillRect(430, 24, 140, 54);
-    ctx.fillStyle = '#DCEFEA'; ctx.fillRect(436, 30, 128, 42);
-    for (let i = 0; i < 6; i++) { ctx.fillStyle = 'rgba(120,150,145,.7)'; ctx.fillRect(436, 32 + i * 7, 128, 2); }
-    // 吊灯
-    ctx.fillStyle = '#6B7A76'; ctx.fillRect(492, 0, 16, 14);
-    ctx.fillStyle = Math.sin(t * 11) > -.9 ? '#FFFBEA' : '#D8D2BE';
-    ctx.beginPath(); ctx.moveTo(470, 14); ctx.lineTo(530, 14); ctx.lineTo(516, 30); ctx.lineTo(484, 30); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = 'rgba(255,251,234,.10)'; ctx.beginPath(); ctx.moveTo(470, 30); ctx.lineTo(530, 30); ctx.lineTo(600, 420); ctx.lineTo(400, 420); ctx.closePath(); ctx.fill();
-
-    // ── 1. 门板内面 ──
+    const VPX = 500, VPY = 300;              // 灭点：门中心
     const shake = Math.min(o.harass || 0, 3) * 2 * (Math.sin(t * 40) > 0 ? 1 : -1);
     const bulge = o.bulge || 0;
-    ctx.save(); ctx.translate(shake, 0);
-    const DX = 300 - bulge * 6, DY = 60, DW = 400 + bulge * 12, DH = 400;
-    ctx.fillStyle = '#8A5A3B'; ctx.fillRect(DX, DY, DW, DH);
-    ctx.strokeStyle = '#5F3A24'; ctx.lineWidth = 4; ctx.strokeRect(DX, DY, DW, DH);
-    // 木纹
-    for (let i = 0; i < 9; i++) { ctx.fillStyle = i % 2 ? '#7A4E33' : '#96653F'; ctx.fillRect(DX + 10 + i * 44, DY + 6, 3, DH - 12); }
+    ctx.translate(shake, 0);
+
+    // ── 0. 地面（透视地砖：向门方向收缩）──
+    ctx.fillStyle = '#B7D6D0'; ctx.fillRect(0, 0, 1000, 620);
+    const rowY = [620, 560, 512, 474, 444, 420, 400, 384, 371, 360, 351, 344, 338, 333, 329, 326];
+    for (let r = 0; r < rowY.length - 1; r++) {
+      const y0 = rowY[r], y1 = rowY[r + 1];
+      const cols = 9;
+      for (let c = 0; c < cols; c++) {
+        // 透视：越远越窄
+        const k0 = (y0 - VPY) / (620 - VPY), k1 = (y1 - VPY) / (620 - VPY);
+        const x0a = VPX + (c / cols * 1000 - VPX) * k0, x0b = VPX + ((c + 1) / cols * 1000 - VPX) * k0;
+        const x1a = VPX + (c / cols * 1000 - VPX) * k1, x1b = VPX + ((c + 1) / cols * 1000 - VPX) * k1;
+        ctx.fillStyle = (r + c) % 2 ? '#CFE8E2' : '#BFE0D9';
+        ctx.beginPath(); ctx.moveTo(x0a, y0); ctx.lineTo(x0b, y0); ctx.lineTo(x1b, y1); ctx.lineTo(x1a, y1); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = 'rgba(120,160,154,.55)'; ctx.lineWidth = 1; ctx.stroke();
+      }
+    }
+    // ── 0b. 侧墙（向灭点收缩）──
+    for (const side of [-1, 1]) {
+      const x0 = side < 0 ? 0 : 1000, x1 = side < 0 ? 300 : 700;
+      ctx.fillStyle = '#CDEBE6';
+      ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x1, 60); ctx.lineTo(x1, 560); ctx.lineTo(x0, 620); ctx.closePath(); ctx.fill();
+      // 墙裙
+      ctx.fillStyle = '#F4FAF8';
+      ctx.beginPath(); ctx.moveTo(x0, 380); ctx.lineTo(x1, 400); ctx.lineTo(x1, 560); ctx.lineTo(x0, 620); ctx.closePath(); ctx.fill();
+      // 瓷砖缝（透视）
+      for (let i = 1; i < 8; i++) {
+        const k = i / 8;
+        const xa = x0 + (x1 - x0) * k, xb = x0 + (x1 - x0) * k;
+        ctx.strokeStyle = 'rgba(140,180,174,.5)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(xa, 60 * k + 0); ctx.lineTo(xb, 620 - 60 * k); ctx.stroke();
+      }
+      for (let i = 1; i < 12; i++) {
+        const yy = 60 + i * 40, xx0 = x0, xx1 = x1;
+        ctx.strokeStyle = 'rgba(140,180,174,.35)'; ctx.beginPath(); ctx.moveTo(xx0, yy); ctx.lineTo(xx1, 60 + (yy - 60) * .92); ctx.stroke();
+      }
+    }
+
+    // ── 1. 门（透视：上窄下宽，门缝透光）──
+    const doorTL = 300, doorTR = 700, doorTT = 60, doorTB = 470;
+    const doorBL = 280 - bulge * 5, doorBR = 720 + bulge * 5, doorBB = 520;
+    ctx.fillStyle = '#5F3A24'; // 门框
+    ctx.beginPath(); ctx.moveTo(doorTL - 14, doorTT - 10); ctx.lineTo(doorTR + 14, doorTT - 10); ctx.lineTo(doorBR + 16, doorBB + 6); ctx.lineTo(doorBL - 16, doorBB + 6); ctx.closePath(); ctx.fill();
+    // 门板（木纹、透视线）
+    ctx.fillStyle = '#8A5A3B';
+    ctx.beginPath(); ctx.moveTo(doorTL, doorTT); ctx.lineTo(doorTR, doorTT); ctx.lineTo(doorBR, doorBB); ctx.lineTo(doorBL, doorBB); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#5F3A24'; ctx.lineWidth = 3; ctx.stroke();
+    for (let i = 1; i < 7; i++) {
+      const k = i / 7;
+      const xt = doorTL + (doorTR - doorTL) * k, xb = doorBL + (doorBR - doorBL) * k;
+      ctx.strokeStyle = i % 2 ? 'rgba(122,78,51,.85)' : 'rgba(150,101,63,.65)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(xt, doorTT + 4); ctx.lineTo(xb, doorBB - 4); ctx.stroke();
+    }
     // 门闩（插销）
-    ctx.fillStyle = '#B0B0B8'; ctx.fillRect(DX + DW - 30, DY + 190, 22, 30);
-    ctx.fillStyle = '#7C7C86'; ctx.fillRect(DX + DW - 30, DY + 190, 22, 8);
-    ctx.fillStyle = '#5F3A24'; ctx.fillRect(DX + DW - 44, DY + 198, 16, 12);
+    ctx.fillStyle = '#B0B0B8'; ctx.fillRect(doorBR - 62, 300, 34, 26);
+    ctx.fillStyle = '#7C7C86'; ctx.fillRect(doorBR - 62, 300, 34, 7);
+    ctx.fillStyle = '#5F3A24'; ctx.fillRect(doorBR - 82, 306, 22, 14);
     // 合页
-    ctx.fillStyle = '#8A8A94'; ctx.fillRect(DX - 2, DY + 40, 14, 26); ctx.fillRect(DX - 2, DY + 320, 14, 26);
-    // 划痕
-    ctx.strokeStyle = 'rgba(60,40,25,.55)'; ctx.lineWidth = 1;
-    for (let i = 0; i < 6; i++) { const x0 = DX + 40 + R() * (DW - 80), y0 = DY + 60 + R() * (DH - 120); ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + 20 + R() * 40, y0 + 6 + R() * 20); ctx.stroke(); }
-    // 涂鸦
-    ctx.fillStyle = 'rgba(40,30,20,.75)'; ctx.font = '900 17px "PingFang SC",system-ui'; ctx.textAlign = 'left';
-    ctx.fillText('王小明到此一游', DX + 40, DY + 90);
-    ctx.fillText('主任是狗', DX + 60, DY + 250);
-    ctx.fillStyle = 'rgba(200,40,40,.72)'; ctx.font = '900 26px system-ui';
-    ctx.fillText('♥', DX + 300, DY + 120); ctx.strokeStyle = 'rgba(40,30,20,.7)'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(DX + 290, DY + 110); ctx.lineTo(DX + 340, DY + 150); ctx.stroke();
-    // 小广告 ×3（歪贴、被撕角）
-    const ads = [['通下水道', '138****6688', DX + 44, DY + 150, -0.06], ['开锁 24H', '挂锁 · 随叫随到', DX + 250, DY + 200, 0.05], ['办证', '学历 · 证件 · 包过', DX + 120, DY + 320, -0.03]];
-    for (const [a, b, x, y, rot] of ads) {
-      ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
-      ctx.fillStyle = '#F4F0E6'; ctx.fillRect(0, 0, 150, 48);
-      ctx.strokeStyle = '#B9B3A4'; ctx.lineWidth = 1; ctx.strokeRect(0, 0, 150, 48);
-      ctx.fillStyle = '#B91C1C'; ctx.font = '900 17px "PingFang SC",system-ui'; ctx.fillText(a, 8, 20);
-      ctx.fillStyle = '#1F1A17'; ctx.font = '700 11px "PingFang SC",system-ui'; ctx.fillText(b, 8, 38);
-      ctx.fillStyle = 'rgba(205,235,230,1)'; ctx.beginPath(); ctx.moveTo(150, 0); ctx.lineTo(126, 0); ctx.lineTo(150, 22); ctx.closePath(); ctx.fill(); // 撕角
+    ctx.fillStyle = '#8A8A94'; ctx.fillRect(doorBL - 6, 150, 16, 30); ctx.fillRect(doorBL - 9, 430, 18, 26);
+    // 门缝（下沿）：门外走廊光 + 走过的影子
+    ctx.fillStyle = '#0E0C0A'; ctx.fillRect(doorBL + 6, doorBB - 10, (doorBR - doorBL) - 12, 18);
+    ctx.fillStyle = 'rgba(255,247,210,.65)'; ctx.fillRect(doorBL + 10, doorBB - 6, (doorBR - doorBL) - 20, 6);
+    const shx = Math.sin(t * 1.4) * 160 + 380;
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(shx, doorBB - 6, 56, 11);
+    // 门板涂鸦 / 小广告（透视缩放）
+    ctx.save(); ctx.translate(340, 150); ctx.transform(1, 0, -.06, 1, 0, 0);
+    ctx.fillStyle = 'rgba(30,22,14,.8)'; ctx.font = '900 20px "PingFang SC",system-ui'; ctx.textAlign = 'left';
+    ctx.fillText('王小明到此一游', 0, 0);
+    ctx.fillText('主任是狗', 20, 150);
+    ctx.fillStyle = 'rgba(190,40,40,.8)'; ctx.font = '900 30px system-ui'; ctx.fillText('♥', 250, 40);
+    ctx.strokeStyle = 'rgba(30,22,14,.7)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(240, 26); ctx.lineTo(300, 72); ctx.stroke();
+    // 小广告
+    const ads = [['通下水道', '138****6688', 10, 60, -.05], ['开锁 24H', '随叫随到', 230, 96, .05], ['办证', '包过', 90, 210, -.02]];
+    for (const [a, b, ax, ay, rot] of ads) {
+      ctx.save(); ctx.translate(ax, ay); ctx.rotate(rot);
+      ctx.fillStyle = '#F4F0E6'; ctx.fillRect(0, 0, 132, 40); ctx.strokeStyle = '#B4AE9F'; ctx.lineWidth = 1; ctx.strokeRect(0, 0, 132, 40);
+      ctx.fillStyle = '#B91C1C'; ctx.font = '900 15px "PingFang SC",system-ui'; ctx.fillText(a, 8, 18);
+      ctx.fillStyle = '#1F1A17'; ctx.font = '700 10px "PingFang SC",system-ui'; ctx.fillText(b, 8, 33);
+      ctx.fillStyle = '#CDEBE6'; ctx.beginPath(); ctx.moveTo(132, 0); ctx.lineTo(112, 0); ctx.lineTo(132, 20); ctx.closePath(); ctx.fill();
       ctx.restore();
-    }
-    // 门缝（下沿 12px）：透光 + 门外影子
-    ctx.fillStyle = '#0E0C0A'; ctx.fillRect(DX + 4, DY + DH - 13, DW - 8, 13);
-    ctx.fillStyle = 'rgba(255,247,210,.55)'; ctx.fillRect(DX + 10, DY + DH - 10, DW - 20, 4);
-    const sh = Math.sin(t * 1.6) * 60 + 200;
-    ctx.fillStyle = 'rgba(0,0,0,.42)'; ctx.fillRect(DX + sh, DY + DH - 9, 46, 8);
-    // 骚扰裂纹 + 鼓包
-    if ((o.harass || 0) >= 2) {
-      ctx.strokeStyle = 'rgba(50,30,20,.8)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(DX + 200, DY + 60); ctx.lineTo(DX + 226, DY + 150); ctx.lineTo(DX + 196, DY + 230); ctx.stroke();
-    }
-    if (bulge > 0) { ctx.strokeStyle = 'rgba(30,20,12,.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(DX + DW / 2, DY + DH / 2, 70 + bulge * 10, 110 + bulge * 14, 0, 0, 6.2832); ctx.stroke(); }
-    // 门缝塞进来的扫把头（被捅）
-    if (o.poking) {
-      ctx.fillStyle = '#BDB76B'; ctx.fillRect(DX + 150, DY + DH - 6, 90, 12);
-      ctx.fillStyle = '#8A7B3A'; ctx.fillRect(DX + 148, DY + DH - 2, 94, 6);
-      for (let i = 0; i < 8; i++) { ctx.fillStyle = '#C9C07A'; ctx.fillRect(DX + 150 + i * 12, DY + DH + 6, 4, 12 + (i % 3) * 4); }
     }
     ctx.restore();
 
-    // ── 2. 左侧卷纸架（真实形态：有纸=纸卷+垂纸；没纸=空纸芯）──
+    // ── 2. 左侧卷纸架（有纸 / 空纸芯）──
     const RX = 150, RY = 330;
-    ctx.fillStyle = '#B0B0B8'; ctx.fillRect(RX - 6, RY - 26, 12, 10); // 支架
-    ctx.fillStyle = '#8A8A94'; ctx.fillRect(RX - 3, RY - 18, 6, 46);
+    ctx.fillStyle = '#9AA5A1'; ctx.fillRect(RX - 6, RY - 30, 12, 10);
+    ctx.fillStyle = '#7C8F8A'; ctx.fillRect(RX - 3, RY - 22, 6, 52);
     if (o.hasPaper) {
-      ctx.fillStyle = '#FAF7EF'; ctx.beginPath(); ctx.ellipse(RX, RY + 8, 30, 22, 0, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = '#FAF7EF'; ctx.beginPath(); ctx.ellipse(RX, RY + 10, 32, 24, 0, 0, 6.2832); ctx.fill();
       ctx.strokeStyle = '#D6D0C2'; ctx.lineWidth = 2; ctx.stroke();
-      ctx.fillStyle = '#E6DFD0'; ctx.beginPath(); ctx.ellipse(RX, RY + 8, 11, 8, 0, 0, 6.2832); ctx.fill();
-      ctx.fillStyle = '#FAF7EF'; ctx.fillRect(RX - 16, RY + 22, 32, 34); // 垂纸
-      ctx.strokeStyle = '#D6D0C2'; ctx.strokeRect(RX - 16, RY + 22, 32, 34);
-      ctx.beginPath(); ctx.moveTo(RX - 16, RY + 56); ctx.lineTo(RX - 6, RY + 62); ctx.lineTo(RX + 4, RY + 56); ctx.lineTo(RX + 16, RY + 62); ctx.stroke();
+      ctx.fillStyle = '#E6DFD0'; ctx.beginPath(); ctx.ellipse(RX, RY + 10, 12, 9, 0, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = '#FAF7EF'; ctx.fillRect(RX - 18, RY + 26, 36, 40);
+      ctx.strokeStyle = '#D6D0C2'; ctx.strokeRect(RX - 18, RY + 26, 36, 40);
+      ctx.beginPath(); ctx.moveTo(RX - 18, RY + 66); ctx.lineTo(RX - 6, RY + 72); ctx.lineTo(RX + 6, RY + 65); ctx.lineTo(RX + 18, RY + 72); ctx.stroke();
     } else {
-      ctx.fillStyle = '#C9BFA8'; ctx.beginPath(); ctx.ellipse(RX, RY + 8, 22, 16, 0, 0, 6.2832); ctx.fill();
-      ctx.fillStyle = '#8A7F6A'; ctx.beginPath(); ctx.ellipse(RX, RY + 8, 12, 8, 0, 0, 6.2832); ctx.fill();
-      ctx.fillStyle = '#FAF7EF'; ctx.fillRect(RX - 8, RY + 14, 16, 12); // 最后半张
+      ctx.fillStyle = '#C9BFA8'; ctx.beginPath(); ctx.ellipse(RX, RY + 10, 24, 17, 0, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = '#8A7F6A'; ctx.beginPath(); ctx.ellipse(RX, RY + 10, 13, 9, 0, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = '#FAF7EF'; ctx.fillRect(RX - 9, RY + 18, 18, 14);
     }
-    // 右侧挂钩 + 书包
-    const HX = 860, HY = 190;
-    ctx.fillStyle = '#B0B0B8'; ctx.fillRect(HX - 4, HY - 6, 8, 16); ctx.fillRect(HX - 4, HY - 6, 22, 6);
-    ctx.fillStyle = '#2F6DB5'; ctx.fillRect(HX - 26, HY + 4, 52, 64);
-    ctx.strokeStyle = '#1D4ED8'; ctx.lineWidth = 3; ctx.strokeRect(HX - 26, HY + 4, 52, 64);
-    ctx.fillStyle = '#3AA0FF'; ctx.fillRect(HX - 16, HY + 18, 32, 16);
+    // ── 2b. 右墙挂钩 + 书包 ──
+    ctx.fillStyle = '#9AA5A1'; ctx.fillRect(852, 176, 8, 18); ctx.fillRect(852, 176, 26, 7);
+    ctx.fillStyle = '#2F6DB5'; ctx.fillRect(832, 196, 62, 74);
+    ctx.strokeStyle = '#1D4ED8'; ctx.lineWidth = 3; ctx.strokeRect(832, 196, 62, 74);
+    ctx.fillStyle = '#60A5FA'; ctx.fillRect(846, 214, 34, 18);
 
-    // ── 3. 蹲便器（真实形态）+ 障碍 ──
+    // ── 3. 蹲便器（透视：近大远小，椭圆便槽 + 水封 + 排污口）──
     const BX = 500, BY = 520;
-    // 台阶
-    ctx.fillStyle = '#E8EFEC'; ctx.fillRect(BX - 190, BY - 40, 380, 110);
-    ctx.strokeStyle = '#B6C6C1'; ctx.lineWidth = 3; ctx.strokeRect(BX - 190, BY - 40, 380, 110);
-    // 蹲便槽（椭圆）
-    ctx.fillStyle = '#F4FAF8'; ctx.beginPath(); ctx.ellipse(BX, BY + 14, 84, 40, 0, 0, 6.2832); ctx.fill();
-    ctx.strokeStyle = '#9FB2AD'; ctx.lineWidth = 4; ctx.stroke();
-    ctx.fillStyle = '#7FA8A0'; ctx.beginPath(); ctx.ellipse(BX, BY + 18, 62, 26, 0, 0, 6.2832); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.ellipse(BX - 16, BY + 12, 24, 8, 0, 0, 6.2832); ctx.fill();
-    // 排污口
-    ctx.fillStyle = '#2F3A38'; ctx.beginPath(); ctx.ellipse(BX, BY + 34, 18, 9, 0, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = '#E4EEEA';
+    ctx.beginPath(); ctx.ellipse(BX, BY - 10, 210, 76, 0, 0, 6.2832); ctx.fill();  // 台阶
+    ctx.strokeStyle = '#B6C6C1'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#F7FCFB';
+    ctx.beginPath(); ctx.ellipse(BX, BY, 96, 48, 0, 0, 6.2832); ctx.fill();        // 便槽外沿
+    ctx.strokeStyle = '#9FB2AD'; ctx.lineWidth = 5; ctx.stroke();
+    ctx.fillStyle = '#86ADA5';
+    ctx.beginPath(); ctx.ellipse(BX, BY + 6, 70, 32, 0, 0, 6.2832); ctx.fill();    // 水封
+    ctx.fillStyle = 'rgba(255,255,255,.45)';
+    ctx.beginPath(); ctx.ellipse(BX - 20, BY - 2, 26, 9, -.2, 0, 6.2832); ctx.fill(); // 水面高光
+    ctx.fillStyle = '#2F3A38'; ctx.beginPath(); ctx.ellipse(BX, BY + 26, 20, 10, 0, 0, 6.2832); ctx.fill(); // 排污口
     // 防滑脚垫
-    ctx.fillStyle = '#D6E2DE'; ctx.fillRect(BX - 160, BY - 16, 56, 20); ctx.fillRect(BX + 104, BY - 16, 56, 20);
-    // 障碍（真实造型）
-    if (o.obstacle) obstacle(ctx, o.obstacle, BX, BY + 6, t, 1.35);
+    ctx.fillStyle = '#D6E2DE'; ctx.fillRect(BX - 186, BY - 34, 64, 26); ctx.fillRect(BX + 122, BY - 34, 64, 26);
+    // 障碍：黄色大便（真实造型）
+    if (o.obstacle) obstacle(ctx, o.obstacle, BX, BY - 4, t, 1.5);
 
-    // ── 4. 地面细节：烟头、纸团、水渍、地漏 ──
-    const floorY = 596;
-    for (let i = 0; i < 4; i++) {
-      const cx2 = 120 + R() * 760, cy2 = floorY - R() * 26;
-      ctx.fillStyle = '#F4F0E6'; ctx.fillRect(cx2, cy2, 16, 5);
-      ctx.fillStyle = '#B5651D'; ctx.fillRect(cx2 + 13, cy2, 5, 5);
-      ctx.fillStyle = '#6B6B6B'; ctx.fillRect(cx2 - 3, cy2, 4, 5);
+    // ── 4. 苍蝇 ──
+    for (let i = 0; i < 3; i++) {
+      const a = t * (1.7 + i * .5) + i * 2.1;
+      const fx0 = BX + Math.cos(a) * (70 + i * 26) + Math.sin(a * 2.3) * 12;
+      const fy0 = BY - 40 + Math.sin(a * 1.3) * 26;
+      ctx.fillStyle = '#1F1A17'; ctx.beginPath(); ctx.ellipse(fx0, fy0, 4, 3, a, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = 'rgba(220,230,235,.75)';
+      const wf = Math.sin(t * 60 + i) > 0 ? 1 : .4;
+      ctx.beginPath(); ctx.ellipse(fx0 - 3, fy0 - 4 * wf, 5, 2.4, -.5, 0, 6.2832); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(fx0 + 3, fy0 - 4 * wf, 5, 2.4, .5, 0, 6.2832); ctx.fill();
     }
-    ctx.fillStyle = 'rgba(255,255,255,.75)';
-    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(200 + R() * 600, floorY - 4 - R() * 30, 5 + R() * 4, 0, 6.2832); ctx.fill(); }
-    ctx.fillStyle = 'rgba(150,140,100,.22)';
-    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.ellipse(120 + R() * 760, floorY - 10 - R() * 30, 26 + R() * 30, 8 + R() * 8, 0, 0, 6.2832); ctx.fill(); }
-    // 地漏
-    ctx.fillStyle = '#9AA5A1'; ctx.fillRect(760, floorY - 22, 40, 16);
-    ctx.fillStyle = '#5F6B68'; for (let i = 0; i < 5; i++) ctx.fillRect(763 + i * 7, floorY - 20, 3, 12);
 
-    // ── 5. 前景：蹲姿膝盖 / 裤腿（马赛克处理裸露）──
+    // ── 5. 地面低俗细节：烟头 / 纸团 / 尿渍 / 地漏 ──
+    for (let i = 0; i < 5; i++) {
+      const cx2 = 90 + R() * 820, cy2 = 560 + R() * 46;
+      ctx.fillStyle = '#F4F0E6'; ctx.fillRect(cx2, cy2, 20, 6);
+      ctx.fillStyle = '#B5651D'; ctx.fillRect(cx2 + 16, cy2, 6, 6);
+      ctx.fillStyle = '#6B6B6B'; ctx.fillRect(cx2 - 4, cy2, 5, 6);
+    }
+    ctx.fillStyle = 'rgba(250,247,239,.85)';
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(160 + R() * 680, 590 - R() * 40, 6 + R() * 5, 0, 6.2832); ctx.fill(); }
+    ctx.fillStyle = 'rgba(150,140,90,.22)';
+    for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.ellipse(120 + R() * 760, 596 - R() * 40, 30 + R() * 34, 9 + R() * 9, 0, 0, 6.2832); ctx.fill(); }
+    ctx.fillStyle = '#9AA5A1'; ctx.fillRect(790, 590, 46, 18);
+    ctx.fillStyle = '#5F6B68'; for (let i = 0; i < 5; i++) ctx.fillRect(794 + i * 8, 592, 3, 14);
+
+    // ── 6. 前景：自己的膝盖 / 裤腿（第一人称坐蹲）──
     if (o.state === 'relief' || o.state === 'blocked' || o.state === 'post') {
       const bob = Math.sin(t * 3) * 2;
-      ctx.fillStyle = '#243244'; ctx.fillRect(330, 470 + bob, 90, 120); ctx.fillRect(580, 470 - bob, 90, 120); // 裤腿
-      ctx.fillStyle = '#1E293B'; ctx.fillRect(330, 566 + bob, 110, 40); ctx.fillRect(560, 566 - bob, 110, 40);
-      // 小腿皮肤
-      ctx.fillStyle = '#F5C9A6'; ctx.fillRect(352, 486 + bob, 46, 40); ctx.fillRect(602, 486 - bob, 46, 40);
-      // 马赛克条（遮挡）
-      for (let i = 0; i < 8; i++) for (let j = 0; j < 3; j++) {
+      ctx.fillStyle = '#243244'; ctx.fillRect(250, 430 + bob, 120, 200); ctx.fillRect(630, 430 - bob, 120, 200); // 大腿
+      ctx.fillStyle = '#1E293B'; ctx.fillRect(230, 600 + bob, 170, 60); ctx.fillRect(600, 600 - bob, 170, 60);
+      ctx.fillStyle = '#F5C9A6'; ctx.fillRect(286, 470 + bob, 56, 90); ctx.fillRect(658, 470 - bob, 56, 90);   // 小腿
+      ctx.fillStyle = '#111827'; ctx.fillRect(280, 556 + bob, 70, 26); ctx.fillRect(652, 556 - bob, 70, 26);   // 脚
+      // 短裤（褪到脚踝）
+      ctx.fillStyle = '#334155'; ctx.fillRect(270, 540 + bob, 96, 34); ctx.fillRect(634, 540 - bob, 96, 34);
+      // 遮挡用马赛克（裸露处理）
+      for (let i = 0; i < 10; i++) for (let j = 0; j < 4; j++) {
         ctx.fillStyle = (i + j) % 2 ? '#9CA3AF' : '#6B7280';
-        ctx.fillRect(430 + i * 10, 540 + j * 10, 10, 10);
+        ctx.fillRect(400 + i * 20, 500 + j * 18, 20, 18);
       }
     }
-    // ── 6. 被闯入演出 ──
+    // ── 7. 被闯入 ──
     if (o.intrusion > 0) {
       const k = o.intrusion;
-      ctx.fillStyle = `rgba(0,0,0,${.55 * k})`; ctx.fillRect(0, 0, 1000, 620);
-      // 门外逆光剪影
-      ctx.fillStyle = 'rgba(255,247,210,' + (.7 * k) + ')'; ctx.fillRect(340, 60, 320, 400);
-      ctx.fillStyle = 'rgba(20,16,12,' + (.9 * k) + ')';
-      ctx.beginPath(); ctx.arc(500, 210, 46, 0, 6.2832); ctx.fill();
-      ctx.fillRect(450, 250, 100, 210);
-      ctx.fillRect(432, 270, 26, 150); ctx.fillRect(542, 270, 26, 150);
-      // 木屑
+      ctx.fillStyle = 'rgba(0,0,0,' + (.6 * k) + ')'; ctx.fillRect(0, 0, 1000, 620);
+      ctx.fillStyle = 'rgba(255,247,210,' + (.75 * k) + ')'; ctx.fillRect(300, 60, 400, 460);
+      ctx.fillStyle = 'rgba(20,16,12,' + (.92 * k) + ')';
+      ctx.beginPath(); ctx.arc(500, 210, 52, 0, 6.2832); ctx.fill();
+      ctx.fillRect(444, 252, 112, 250); ctx.fillRect(422, 276, 28, 180); ctx.fillRect(550, 276, 28, 180);
       ctx.fillStyle = '#C9A87C';
-      for (let i = 0; i < 14; i++) { const a = i / 14 * 6.283; ctx.fillRect(500 + Math.cos(a) * (60 + 120 * k), 300 + Math.sin(a) * (60 + 120 * k), 6, 4); }
-      // 飞舞的厕纸
-      ctx.fillStyle = '#FAF7EF'; ctx.save(); ctx.translate(720 - 200 * k, 380 - 120 * k); ctx.rotate(k * 4); ctx.fillRect(-24, -12, 48, 24); ctx.restore();
+      for (let i = 0; i < 18; i++) { const a = i / 18 * 6.283, d = 60 + 170 * k; ctx.fillRect(500 + Math.cos(a) * d, 300 + Math.sin(a) * d * .8, 7, 4); }
+      ctx.save(); ctx.translate(760 - 220 * k, 400 - 150 * k); ctx.rotate(k * 6);
+      ctx.fillStyle = '#FAF7EF'; ctx.fillRect(-30, -16, 60, 32); ctx.strokeStyle = '#D6D0C2'; ctx.strokeRect(-30, -16, 60, 32);
+      ctx.restore();
     }
-    // ── 7. 被捅演出：红边暗角 ──
+    // ── 8. 被捅：扫把从门缝下探入（透视：近大远小）+ 红边暗角 ──
+    if (o.poking) {
+      const pk = o.pokeK || 0;
+      for (let i = 0; i < 14; i++) { // 布头刷毛
+        ctx.fillStyle = i % 2 ? '#C9B96A' : '#BDB76B';
+        ctx.fillRect(430 + i * 8, 470 - 70 * pk, 7, 60 + 40 * pk);
+      }
+      ctx.fillStyle = '#BDB76B'; ctx.fillRect(420, 462 - 74 * pk, 128, 16);
+      ctx.fillStyle = '#C9A06A'; ctx.fillRect(474, 462 - 74 * pk - 120 * pk, 20, 120 * pk + 10);
+      ctx.fillStyle = '#8A5A3B'; ctx.fillRect(468, 462 - 74 * pk - 6, 32, 12);
+    }
     if (o.hurt > 0) {
-      const g = ctx.createRadialGradient(500, 310, 180, 500, 310, 560);
-      g.addColorStop(0, 'rgba(180,20,20,0)'); g.addColorStop(1, 'rgba(180,20,20,' + (.75 * o.hurt) + ')');
+      const g = ctx.createRadialGradient(500, 310, 200, 500, 310, 580);
+      g.addColorStop(0, 'rgba(180,20,20,0)'); g.addColorStop(1, 'rgba(180,20,20,' + (.8 * o.hurt) + ')');
       ctx.fillStyle = g; ctx.fillRect(0, 0, 1000, 620);
     }
     ctx.restore();

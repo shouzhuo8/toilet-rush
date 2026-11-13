@@ -1318,8 +1318,12 @@ if (typeof window !== 'undefined') (function () {
       const st = sim.stalls[you.atStall];
       const hurtAcc = fx.reduce((m, e) => (e.kind === 'hurt' && e.fm === 2 ? Math.max(m, e.life) : m), 0);
       const intr = you._intrusionUntil && sim.t < you._intrusionUntil ? Math.min(1, (you._intrusionUntil - sim.t) / (TICK * 0.9)) : 0;
-      A.stallInterior(ctx, {
-        w: cv.width, h: cv.height, t: sim.t / TICK,
+      const IS = 2; // 内景 2× 像素密度（邮件指令：像素高一点）
+      if (!draw._ic || draw._ic.width !== cv.width * IS) { draw._ic = document.createElement('canvas'); draw._ic.width = cv.width * IS; draw._ic.height = cv.height * IS; draw._ictx = draw._ic.getContext('2d'); }
+      const ictx = draw._ictx;
+      ictx.clearRect(0, 0, draw._ic.width, draw._ic.height);
+      A.stallInterior(ictx, {
+        w: draw._ic.width, h: draw._ic.height, t: sim.t / TICK,
         st, p: you, idx: you.atStall, seed: sim.seed,
         harass: st ? st.harass : 0,
         state: you.state === 'relief' ? 'relief' : (you.state === 'post' ? 'post' : (st && st.obstacle ? 'blocked' : 'idle')),
@@ -1327,9 +1331,12 @@ if (typeof window !== 'undefined') (function () {
         obstacle: st ? st.obstacle : null,
         bulge: st && st.harass >= 3 ? 1 : 0,
         poking: st && st.pokingUntil && sim.t < st.pokingUntil,
+        pokeK: st && st.pokingUntil ? clamp((st.pokingUntil - sim.t) / (TICK * 0.3), 0, 1) : 0,
         intrusion: intr,
         hurt: hurtAcc,
       });
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(draw._ic, 0, 0, cv.width, cv.height);
       // 内景里的浮字/拟声/特效
       for (const f of floats) { if (f.fm !== 2) continue; A.label(ctx, f.txt, f.x * cv.width / 1000, f.y * cv.height / 620, { size: 15, lw: 5, color: f.color }); }
       for (const o of onomats) { if (o.fm !== 2) continue; A.onomat(ctx, { ...o, x: o.x * cv.width / 1000, y: o.y * cv.height / 620 }); }
