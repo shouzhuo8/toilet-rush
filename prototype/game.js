@@ -1318,6 +1318,11 @@ if (typeof window !== 'undefined') (function () {
     // ── 角色（专属造型/动作/状态）+ 头顶信息条 ──
     for (const p of sim.players) {
       if (p.mapId !== viewMap || !vis(p.x, p.y, 70)) continue;
+      // 动作状态标记（ART §2.2）：移动中/疾跑/霸体/激怒
+      const pvx = p._lastX === undefined ? 0 : p.x - p._lastX, pvy = p._lastY === undefined ? 0 : p.y - p._lastY;
+      p.moving = Math.abs(pvx) + Math.abs(pvy) > 0.5; p._lastX = p.x; p._lastY = p.y;
+      p.speedRun = p.moving && (Math.abs(pvx) + Math.abs(pvy)) > 2.2;
+      p.armorNow = sim.t < p.armorUntil; p.rageNow = sim.t < p.rageUntil;
       ctx.save(); ctx.globalAlpha = p.final ? .38 : 1;
       ctx.translate(p.x, p.y);
       A.character(ctx, p, tSec);

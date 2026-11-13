@@ -92,58 +92,81 @@
     opt = opt || {};
     const H = HERO[p.id % 5] || HERO[0];
     const scl = p.id === 4 ? 1.18 : 1;
-    const walkFrame = Math.floor(t * 8) % 4;
-    const runFrame = Math.floor(t * 12) % 4;
+    const moving = !!p.moving;
     const clench = p.endurance < 30;
     const dir = p.dir || 1;
+    const charging = p.charging;
+    const pushPhase = charging && charging.push;
     ctx.save();
     ctx.scale(dir * scl, scl);
-    const bob = (p.moveMode === 'run' ? [0, -2, 0, 2][runFrame] : p.moveMode === 'sneak' ? 0 : [0, -1, 0, -1][walkFrame]);
-    const legSwing = (p.state === 'idle' && !p.charging) ? [0, 3, 0, -3][walkFrame] : 0;
+
+    let bob = 0, lean = 0, legSwing = 0, armSwing = 0, squash = 1;
+    if (!moving) {
+      const f = Math.floor(t * 5) % 6;              // idle 憋扭：第3帧膝盖内扣、第6帧脸闪橙
+      bob = f === 2 ? 1 : 0;
+      legSwing = f === 2 || f === 3 ? 2 : 0;
+      if (f === 5) { ctx.globalAlpha = .5; px(ctx, -9, 12, 18, 2, '#FB923C'); ctx.globalAlpha = 1; }
+    } else if (clench) {
+      const f = Math.floor(t * 4) % 4; legSwing = f === 1 ? 1 : 0; squash = 1.05; // 夹腿挪动
+    } else {
+      const f = Math.floor(t * (p.speedRun ? 13 : 9)) % 6;               // 走/跑 6 帧
+      legSwing = [0, 3, 5, 0, -3, -5][f];
+      armSwing = [0, -2, -3, 0, 2, 3][f];
+      bob = [0, -1, -2, 0, -1, -2][f];
+      lean = p.speedRun ? 4 : 2;
+      if (p.speedRun) { ctx.globalAlpha = .3; px(ctx, -24, -4, 9, 2, C.paper); px(ctx, -28, 2, 11, 2, C.paper); ctx.globalAlpha = 1; }
+    }
+    if (charging && charging.type === 'punch') { squash = .92; lean = 6; }
     const y = bob;
 
-    // 影子
     ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(0, 16, 12, 4, 0, 0, 6.2832); ctx.fill();
-    // 腿（夹腿时并死）
+    ctx.save(); ctx.transform(1, 0, -lean / 60, squash, 0, 0);
+
+    // 腿
     if (clench) { px(ctx, -5, y + 8, 4, 9, '#334155'); px(ctx, 1, y + 8, 4, 9, '#334155'); }
-    else { px(ctx, -6 + legSwing, y + 8, 5, 9, '#334155'); px(ctx, 1 - legSwing, y + 8, 5, 9, '#334155'); }
-    px(ctx, -7 + legSwing, y + 15, 7, 4, C.ink); px(ctx, 1 - legSwing, y + 15, 7, 4, C.ink);
-    // 身体（校服 + 拉链/领口）
+    else { px(ctx, -6 + legSwing * .8, y + 8, 5, 9, '#334155'); px(ctx, 1 - legSwing * .8, y + 8, 5, 9, '#334155'); }
+    px(ctx, -7 + legSwing * .8, y + 15, 7, 4, C.ink); px(ctx, 1 - legSwing * .8, y + 15, 7, 4, C.ink);
+    // 身体
     px(ctx, -9, y - 9, 18, 18, H.uniform); outline(ctx, -9, y - 9, 18, 18, C.ink, 2);
-    px(ctx, -9, y - 3, 18, 3, H.trim);
-    px(ctx, -2, y - 9, 3, 18, C.paper); px(ctx, -1, y - 8, 1, 16, H.trim); // 拉链
-    // 手臂（出拳时前伸）
-    if (p.charging && p.charging.type === 'punch') { px(ctx, 8, y - 6, 12, 6, C.skin); px(ctx, 17, y - 8, 9, 10, C.paper); outline(ctx, 17, y - 8, 9, 10, C.ink, 2); }
-    else { px(ctx, -12, y - 7, 4, 12, H.uniform); px(ctx, 8, y - 7, 4, 12, H.uniform); px(ctx, -12, y + 4, 4, 4, C.skin); px(ctx, 8, y + 4, 4, 4, C.skin); }
+    px(ctx, -9, y - 3, 18, 3, H.trim); px(ctx, -2, y - 9, 3, 18, C.paper); px(ctx, -1, y - 8, 1, 16, H.trim);
+    // 手臂
+    if (charging && charging.type === 'punch') {
+      const ext = pushPhase ? 20 : 14;
+      px(ctx, 8, y - 6, ext, 6, C.skin); px(ctx, 8 + ext, y - 8, 10, 11, C.paper); outline(ctx, 8 + ext, y - 8, 10, 11, C.ink, 2);
+      ctx.globalAlpha = .5; px(ctx, 8 + ext + 12, y - 12, 12, 2, C.paper); px(ctx, 8 + ext + 12, y - 4, 9, 2, C.paper); ctx.globalAlpha = 1;
+    } else {
+      px(ctx, -12, y - 7 - armSwing, 4, 12, H.uniform); px(ctx, 8, y - 7 + armSwing, 4, 12, H.uniform);
+      px(ctx, -12, y + 4 - armSwing, 4, 4, C.skin); px(ctx, 8, y + 4 + armSwing, 4, 4, C.skin);
+    }
     // 头
     px(ctx, -8, y - 24, 16, 15, C.skin); outline(ctx, -8, y - 24, 16, 15, C.ink, 2);
     px(ctx, -8, y - 26, 16, 5, H.hair); px(ctx, -9, y - 23, 2, 9, H.hair); px(ctx, 7, y - 23, 2, 9, H.hair);
-    // 眼（晕眩变 @ @，憋红变 > <）
-    if (p.staggerUntil > t * 20 && false) { label(ctx, '@', -5, y - 15, { size: 9, lw: 0 }); label(ctx, '@', 3, y - 15, { size: 9, lw: 0 }); }
-    else if (clench) { px(ctx, -5, y - 18, 3, 2, C.ink); px(ctx, 3, y - 18, 3, 2, C.ink); px(ctx, -4, y - 16, 2, 2, C.red); px(ctx, 3, y - 16, 2, 2, C.red); }
+    // 眼
+    if (clench) { px(ctx, -6, y - 19, 4, 2, C.ink); px(ctx, 2, y - 19, 4, 2, C.ink); px(ctx, -5, y - 16, 2, 2, C.red); px(ctx, 3, y - 16, 2, 2, C.red); }
+    else if (charging && charging.type === 'punch') { px(ctx, -6, y - 19, 3, 3, C.ink); px(ctx, 2, y - 19, 3, 3, C.ink); }
     else { px(ctx, -5, y - 18, 2, 3, C.ink); px(ctx, 3, y - 18, 2, 3, C.ink); }
-    px(ctx, -1, y - 13, 3, 1, C.skinShade); // 嘴
-    // 专属配件
-    if (H.acc === 'ahoge') { px(ctx, 0, y - 31, 2, 6, H.hair); px(ctx, 2, y - 32, 4, 2, H.hair); }
+    if (charging && charging.type === 'punch') px(ctx, -2, y - 13, 5, 2, C.ink); else px(ctx, -1, y - 13, 3, 1, C.skinShade);
+    // 配件
+    if (H.acc === 'ahoge') { px(ctx, 0, y - 31, 2, 6, H.hair); px(ctx, 2 + Math.sin(t * 9), y - 32, 4, 2, H.hair); }
     if (H.acc === 'glasses') { ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(-3.5, y - 17, 3.5, 0, 6.283); ctx.arc(4.5, y - 17, 3.5, 0, 6.283); ctx.stroke(); px(ctx, -1, y - 17, 2, 1, C.ink); }
     if (H.acc === 'brow') px(ctx, -7, y - 22, 14, 3, H.hair);
     if (H.acc === 'twintail') {
-      const sw = Math.sin(t * 8) * 2;
+      const sw = Math.sin(t * 9) * 2 + (moving ? 2 : 0);
       px(ctx, -13, y - 26 + sw, 5, 14, H.hair); px(ctx, 9, y - 26 - sw, 5, 14, H.hair);
       px(ctx, -13, y - 28 + sw, 5, 3, '#EF4444'); px(ctx, 9, y - 28 - sw, 5, 3, '#EF4444');
     }
     if (H.acc === 'bun') { px(ctx, 6, y - 13, 7, 4, '#F5DEB3'); outline(ctx, 6, y - 13, 7, 4, C.woodDark, 1); }
-    // 状态叠加
-    if (clench) { // 耳朵喷蒸汽
-      ctx.globalAlpha = .8; circle(ctx, -12, y - 28 + Math.sin(t * 9) * 2, 2, C.paper); circle(ctx, 12, y - 30 + Math.cos(t * 8) * 2, 2, C.paper); ctx.globalAlpha = 1;
-    }
-    if (p.naked) { // 遮羞烟雾 + 内裤
+    if (p.naked) {
       px(ctx, -9, y + 2, 18, 11, '#FBCFE8'); outline(ctx, -9, y + 2, 18, 11, C.pink, 2);
       ctx.globalAlpha = .55; circle(ctx, -12, y - 4, 5, C.paper); circle(ctx, 12, y - 8, 6, C.paper); ctx.globalAlpha = 1;
     }
-    if (p.charging && p.charging.type === 'punch') { // 出拳速度线
-      px(ctx, 27, y - 10, 9, 2, C.paper); px(ctx, 29, y - 4, 7, 2, C.paper);
+    // 夹腿蒸汽 / 霸体环
+    if (clench && moving) { ctx.globalAlpha = .7; circle(ctx, -10, y - 30 + Math.sin(t * 7) * 2, 2.2, C.paper); circle(ctx, 10, y - 34 + Math.cos(t * 6) * 2, 1.8, C.paper); ctx.globalAlpha = 1; }
+    if (p.armorNow || p.rageNow) {
+      ctx.strokeStyle = p.rageNow ? '#F97316' : '#38BDF8'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, y - 6, 20, 0, 6.283); ctx.stroke();
     }
+    ctx.restore();
     ctx.restore();
   }
 
