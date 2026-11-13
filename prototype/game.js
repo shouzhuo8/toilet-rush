@@ -43,14 +43,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const MAPS = [
   { id: 0, name: '教室', W: 1100, H: 800, floor: 'floorClass', label: '教室',
     rooms: [{ x: 60, y: 140, w: 980, h: 520 }] },
-  { id: 1, name: '教室外', W: 2400, H: 1200, floor: 'floorFast', label: '走廊',
-    rooms: [
-      { x: 40, y: 160, w: 140, h: 920 },                // 西竖井（教室门落点，纵贯三路）
-      { x: 180, y: 160, w: 2000, h: 100, id: 'rB', label: '道具路B', floor: 'floorB' },
-      { x: 180, y: 560, w: 2000, h: 100, id: 'fast', label: '快速路', floor: 'floorFast' },
-      { x: 180, y: 960, w: 2000, h: 120, id: 'rA', label: '道具路A', floor: 'floorA' },
-      { x: 2180, y: 160, w: 140, h: 920 },              // 东竖井（厕所门落点，纵贯三路）
-    ] },
+  // 裁决#27：教室外改为单一大开放区域（无三条道路分割、无阻挡），自由活动
+  { id: 1, name: '教室外', W: 2400, H: 1200, floor: 'floorFast', label: '操场/走廊',
+    rooms: [{ x: 40, y: 100, w: 2320, h: 1000 }] },
   { id: 2, name: '厕所', W: 1800, H: 1100, floor: 'toilet', label: '厕所',
     rooms: [{ x: 60, y: 60, w: 1680, h: 980 }] },
 ];
@@ -73,9 +68,10 @@ const STALLS = [ // map2 坐标（上排 3 间 y=140，下排 2 间 y=520）
 const SINK = { x: 1500, y: 560, mapId: 2 };
 const SPAWNS = [0, 1, 2, 3, 4].map(i => ({ x: 170, y: 230 + i * 100 })); // map0 西墙纵向一列：全员到东门等距（公平裁决#23）
 const ROUTES = { // map1 内分段路径（西井→东路→东井）
-  fast: [{ x: 140, y: 610 }, { x: 500, y: 610 }, { x: 1900, y: 610 }, { x: 2220, y: 610 }],
-  A: [{ x: 140, y: 1010 }, { x: 500, y: 1010 }, { x: 1900, y: 1010 }, { x: 2220, y: 610 }],
-  B: [{ x: 140, y: 210 }, { x: 500, y: 210 }, { x: 1900, y: 210 }, { x: 2220, y: 610 }],
+  // 开放区域：AI 直线奔向厕所门，无分路（裁决#27）
+  fast: [{ x: 200, y: 600 }, { x: 2320, y: 600 }],
+  A: [{ x: 200, y: 600 }, { x: 2320, y: 600 }],
+  B: [{ x: 200, y: 600 }, { x: 2320, y: 600 }],
 };
 const ITEM_DEFS = {
   mask: { name: '口罩', color: '#8ecae6' }, broom: { name: '扫把', color: '#bdb76b' },
@@ -1019,15 +1015,8 @@ if (typeof window !== 'undefined') (function () {
   bindTap('btnE', doSkill);
   bindTap('btnF', doItem);
   bindTap('btnX', doCancel);
-  bindTap('btnRun', () => cycleMode());
-  bindTap('btnR', doFlushFake);
   bindTap('btnP', doPunch);
-  function cycleMode() {
-    const order = ['walk', 'run', 'sneak']; const m = { 走: 'run', 跑: 'sneak', 潜: 'walk' };
-    const el = document.getElementById('btnRun');
-    const next = m[el.textContent] || 'run'; el.textContent = { walk: '走', run: '跑', sneak: '潜' }[next];
-    sim.queue(0, 'move', { mode: next });
-  }
+
 
   function doCancel() {
     if (you.charging) { sim.cancel(0); }
@@ -1162,7 +1151,7 @@ if (typeof window !== 'undefined') (function () {
         padding:8px 14px;font-size:14px;font-weight:900;color:#1f1a17;white-space:nowrap;
         background:linear-gradient(#fff7ed,#fbbf24);border:3px solid #5f3a24;border-radius:12px;
         box-shadow:0 4px 0 #0008,0 6px 14px #0009;cursor:pointer;text-shadow:none;
-        transition:transform .08s;font-family:system-ui,"PingFang SC",sans-serif;`;
+        font-family:system-ui,"PingFang SC",sans-serif;`;
       el.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
       let fired = false;
       const trigger = (ev) => { ev.preventDefault(); const b = ctxBtns.find(x => x.el === el); if (b) { b.act.run(); pulse(b.act.key); } };
@@ -1171,17 +1160,41 @@ if (typeof window !== 'undefined') (function () {
       hostEl.appendChild(el);
       ctxBtns.push({ el, act: null });
     }
-    // 更新内容与位置（世界→屏幕）
-    const map = MAPS[viewMap];
+    // 更新内容与位置（世界→屏幕）。量化到 4px 网格 + 文本仅在变化时写入，消除抖动（裁决#28）
+    const CSSW = cv.clientWidth || cv.width, CSSH = cv.clientHeight || cv.height;
+    const kx = CSSW / cv.width, ky = CSSH / cv.height; // 逻辑→CSS 像素
+    const Q = 4;
     for (let i = 0; i < acts.length; i++) {
       const b = ctxBtns[i]; b.act = acts[i];
-      b.el.textContent = `${b.act.icon} ${b.act.label}`;
-      const sx = cv.width / 2 + (b.act.at.x - cam.x), sy = cv.height / 2 + (b.act.at.y - cam.y);
-      b.el.style.left = clamp(sx, 70, cv.width - 70) + 'px';
-      b.el.style.top = clamp(sy, 60, cv.height - 30) + 'px';
-      b.el.style.display = '';
+      const txt = `${b.act.icon} ${b.act.label}`;
+      if (b.txt !== txt) { b.el.textContent = txt; b.txt = txt; }
+      const cvr = cv.getBoundingClientRect(), wr = hostEl.getBoundingClientRect();
+      const ox = cvr.left - wr.left, oy = cvr.top - wr.top;
+      const sx = ox + (cvr.width / 2) + ((b.act.at.x - cam.x)) * (cvr.width / cv.width);
+      const sy = oy + (cvr.height / 2) + ((b.act.at.y - cam.y)) * (cvr.height / cv.height);
+      const qx = Math.round(clamp(sx, 80, wr.width - 80) / Q) * Q;
+      const qy = Math.round(clamp(sy, 56, wr.height - 26) / Q) * Q;
+      if (b.qx !== qx) { b.el.style.left = qx + 'px'; b.qx = qx; }
+      if (b.qy !== qy) { b.el.style.top = qy + 'px'; b.qy = qy; }
+      if (b.el.style.display === 'none') b.el.style.display = '';
     }
   }
+  function updateTouchButtons() {
+    const acts = scanContextActions();
+    const has = (keys) => acts.some(a => keys.includes(a.key));
+    const set = (id, show, label) => { const el = document.getElementById(id); if (!el) return; el.classList.toggle('show', show); if (label && el.textContent !== label) el.textContent = label; };
+    // 交互：有任何上下文动作才显示，并直接显示主动作名（如"开始拉屎"）
+    set('btnQ', acts.length > 0, acts.length ? acts[0].label.slice(0, 4) : '交互');
+    // 技能：嗅闻（次数>0且在厕所）或涡轮（排便中）
+    set('btnE', has(['sniff']) || (you.state === 'relief' && you.turboLeft > 0), you.state === 'relief' ? '涡轮' : '嗅闻');
+    // 道具：持消耗品才显示
+    set('btnF', has(['soda', 'poster']), has(['soda']) ? '憋气糖' : '假贴');
+    // 出拳：有敌在拳程且 CD 好
+    set('btnP', has(['punch']), '出拳');
+    // 取消：引导中 / 排便中 / 光屁股 / POST
+    set('btnX', !!you.charging || you.state === 'relief' || you.naked || you.state === 'post', you.charging ? (you.charging.push ? '松手' : '取消') : '弃坑');
+  }
+
   function pulse(key) { /* 点击反馈：按钮已由 CSS active 处理 */ }
 
   function doInteract() {
@@ -1277,7 +1290,7 @@ if (typeof window !== 'undefined') (function () {
     }
     // 场景布景
     if (viewMap === 0) { A.desks(ctx, 240, 520, 4); A.label(ctx, '老师还在拖堂…', 550, 100, { size: 18, color: '#FDE047' }); }
-    if (viewMap === 1) { A.lockers(ctx, 400, 168, 5); A.lockers(ctx, 400, 968, 5); A.label(ctx, '← 教室              厕所 →', 750, 92, { size: 15, color: '#FFF7ED' }); }
+    if (viewMap === 1) { for (let i = 0; i < 8; i++) { A.lockers(ctx, 300 + i * 240, 120, 4); A.lockers(ctx, 300 + i * 240, 1040, 4); } A.label(ctx, '← 教室                              厕所 →', 1200, 90, { size: 16 }); }
     if (viewMap === 2) A.tilesWall(ctx, 60, 60, 1680, 30);
     A.label(ctx, '【' + map.name + '】', cam.x, tp + 34, { size: 17, color: '#FDE047' });
 
@@ -1351,7 +1364,7 @@ if (typeof window !== 'undefined') (function () {
     const hint = (() => {
       if (sim.phase === 'prep') return 'WASD/摇杆 自由走动 · 铃响后走到右侧出口';
       if (viewMap === 0) return '→ 走向教室出口';
-      if (viewMap === 1) return 'Q 拾道具 · P 出拳 · → 走到厕所门';
+      if (viewMap === 1) return '自由活动：捡道具、打人 · 往右走到厕所门';
       if (you.state === 'post') return '1 喊话 · 2 破罐(+5s) · 3 光屁股出门';
       if (you.naked) return 'Q 取纸/翻入 · R 洗手(+5s) · 10s 内解决';
       if (you.charging && you.charging.push) return 'X 松手保命！(主任间有咳嗽预警)';
@@ -1450,7 +1463,7 @@ if (typeof window !== 'undefined') (function () {
     for (let i = fx.length - 1; i >= 0; i--) { const e = fx[i]; e.x += e.vx * dt; e.y += e.vy * dt; e.vx *= 0.94; e.vy *= 0.94; e.life -= dt; if (e.life <= 0) fx.splice(i, 1); }
     for (let i = floats.length - 1; i >= 0; i--) { floats[i].life -= dt; if (floats[i].life <= 0) floats.splice(i, 1); }
     for (let i = onomats.length - 1; i >= 0; i--) { onomats[i].life -= dt; onomats[i].t += dt; if (onomats[i].life <= 0) onomats.splice(i, 1); }
-    draw(now, dt); updateHud(); renderContextButtons();
+    draw(now, dt); updateHud(); renderContextButtons(); updateTouchButtons();
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);

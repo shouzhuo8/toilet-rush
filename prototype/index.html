@@ -29,8 +29,6 @@
     #joy { width: 108px; height: 108px; }
     #knob { width: 44px; height: 44px; margin: -22px 0 0 -22px; }
     .abtn { width: 56px; height: 56px; }
-    #btnP, #btnR { left: 132px; }
-    #btnRun { left: 132px; }
     #portraitTip { display: block !important; }
   }
   #portraitTip { display: none; position: absolute; top: 44px; left: 50%; transform: translateX(-50%); color: #ffd93d; font-size: 12px; background: #000000aa; padding: 3px 10px; border-radius: 6px; pointer-events: none; z-index: 5; }
@@ -47,9 +45,10 @@
   #knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: #ffffff33; border: 2px solid #ffffff55; }
   .abtn { position: absolute; width: 64px; height: 64px; border-radius: 50%; border: 2px solid #ffffff44; background: #ffffff1c; color: #fff; font-weight: 900; font-size: 15px; pointer-events: auto; }
   .abtn:active { background: #ffffff45; }
-  #btnQ { right: 108px; bottom: 96px; } #btnE { right: 30px; bottom: 122px; } #btnF { right: 30px; bottom: 40px; }
-  #btnX { right: 108px; bottom: 24px; width: 52px; height: 52px; background: #ef444433; }
-  #btnRun { position: absolute; left: 160px; bottom: 30px; width: 56px; height: 40px; border-radius: 8px; border: 2px solid #ffffff44; background: #ffffff1c; color: #fff; font-weight: 900; pointer-events: auto; }
+  #rmbtns { position:absolute; right:16px; bottom:20px; display:grid; grid-template-columns:repeat(2,68px); gap:10px; pointer-events:none; }
+  #rmbtns .abtn { position:static; pointer-events:auto; display:none; width:68px; height:68px; font-size:15px; }
+  #rmbtns .abtn.show { display:block; }
+  #btnX { width:56px !important; height:56px !important; }
   /* POST 弹窗 */
   #postUI { display: none; position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%); gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 90%; z-index: 30; }
   #postUI button { padding: 16px 22px; font-size: 18px; font-weight: 900; border-radius: 12px; border: none; cursor: pointer; }
@@ -70,18 +69,17 @@
   #timer { text-shadow: 0 0 8px #ffd93d88, 2px 2px 0 #000; }
   #dbf { padding: 2px 8px; border: 1px solid #ffffff22; border-radius: 6px; background: #00000033; }
   .itm { background: linear-gradient(#ffffff22, #00000044); text-shadow: 1px 1px 0 #000; }
-  #postUI button, #btnAgain, .abtn, #btnRun, #btnP, #btnR {
+  #postUI button, #btnAgain, .abtn {
     box-shadow: inset 0 2px 0 #ffffff33, inset 0 -3px 0 #00000044, 0 4px 0 #00000055, 0 6px 12px #0008;
     text-shadow: 1px 2px 0 #0009; transition: transform .08s, filter .08s;
   }
-  #postUI button:active, #btnAgain:active, .abtn:active, #btnRun:active, #btnP:active, #btnR:active { transform: translateY(3px); box-shadow: inset 0 2px 0 #0004; filter: brightness(1.25); }
+  #postUI button:active, #btnAgain:active, .abtn:active { transform: translateY(3px); box-shadow: inset 0 2px 0 #0004; filter: brightness(1.25); }
   #btnShout { background: linear-gradient(#fde047, #d97706); color: #1f1a17; }
   #btnNaked { background: linear-gradient(#f9a8d4, #be185d); color: #fff; }
   #btnBreak { background: linear-gradient(#f87171, #991b1b); color: #fff; }
   .abtn { background: radial-gradient(circle at 35% 30%, #ffffff2e, #ffffff12 60%, #00000033); }
   #btnX { background: radial-gradient(circle at 35% 30%, #fca5a5, #b91c1c); }
   #btnP { background: linear-gradient(#fdba74, #c2410c); color: #fff; }
-  #btnR { background: linear-gradient(#a5f3fc, #0e7490); color: #fff; }
   #btnAgain { background: linear-gradient(#fde047, #b45309); color: #1f1a17; }
   .banner { box-shadow: 0 4px 0 #0008, 0 8px 20px #0009; border: 2px solid #ffffff22; text-shadow: 1px 2px 0 #000; }
   .board { background: linear-gradient(#ffffff18, #00000055); border: 3px solid #8a5a3b; box-shadow: 0 8px 24px #000a; }
@@ -114,13 +112,13 @@
     </div>
     <div id="touch">
       <div id="joy"><div id="knob"></div></div>
-      <button id="btnRun">走</button>
-      <button id="btnP" style="position:absolute;left:160px;bottom:124px;width:56px;height:32px;border-radius:8px;border:2px solid #ffffff44;background:#ffffff1c;color:#fff;font-size:12px;font-weight:900;pointer-events:auto">出拳</button>
-      <button id="btnR" style="position:absolute;left:160px;bottom:80px;width:56px;height:32px;border-radius:8px;border:2px solid #ffffff44;background:#ffffff1c;color:#fff;font-size:12px;font-weight:900;pointer-events:auto">冲水</button>
-      <button class="abtn" id="btnQ">交互</button>
-      <button class="abtn" id="btnE">技能</button>
-      <button class="abtn" id="btnF">道具</button>
-      <button class="abtn" id="btnX">取消</button>
+      <div id="rmbtns">
+        <button class="abtn" id="btnQ">交互</button>
+        <button class="abtn" id="btnE">技能</button>
+        <button class="abtn" id="btnF">道具</button>
+        <button class="abtn" id="btnP">出拳</button>
+        <button class="abtn" id="btnX">取消</button>
+      </div>
     </div>
     <div id="endUI">
       <h1>下课结束！</h1>
