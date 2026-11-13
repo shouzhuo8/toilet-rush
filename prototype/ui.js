@@ -10,7 +10,7 @@
   const css = doc.createElement('style');
   css.textContent = `
   .ui-layer { position:absolute; inset:0; pointer-events:none; z-index:60; font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif; }
-  .ui-layer * { pointer-events:auto; }
+  .ui-layer #uiStory, .ui-layer #uiRotate { pointer-events:auto; } /* 仅对话框与横屏按钮可点 */
 
   /* 剧情对话框 */
   #uiStory { position:absolute; left:50%; bottom:12%; transform:translateX(-50%);
@@ -61,6 +61,8 @@
   #uiFlash.go { animation:flash .3s ease-out; }
   @keyframes flash { 0% { opacity:.72 } 100% { opacity:0 } }
 
+
+  #uiTeach, #uiTeachPointer, #uiSkillWrap, .ui-skill { pointer-events:none; }
   /* 横屏按钮 */
   #uiRotate { position:absolute; right:12px; top:52px; padding:8px 14px; font-size:12px; font-weight:900;
     color:#1f1a17; background:linear-gradient(#fde047,#d97706); border:3px solid #5f3a24; border-radius:10px;
@@ -184,12 +186,8 @@
 
   /* ---------- 开场剧情（不依赖 game.js，靠 HUD 文案变化推铃响） ---------- */
   function intro() {
-    say('你 · 内心独白', '……不行了。第三节课时那杯冰奶茶，正在我肚子里发动政变。', { hold: 3400 });
-    say('同桌 王小明', '喂，你脸都绿了。忍住啊，还有三分钟下课……', { hold: 3000 });
-    say('你 · 内心独白', '忍？这根绿条一归零，我就会当着全班「炸裆」——社死到毕业。', { urgent: true, hold: 3400 });
-    say('老师', '（粉笔一敲）这道题讲完就下课……再讲一分钟。', { hold: 2800 });
-    say('你 · 内心独白', '铃一响就冲！全楼只有一个厕所、五个隔间，五个人都憋着呢。', { urgent: true, hold: 3600 });
-    setTimeout(teachEndurance, 1200);
+    say('你 · 憋到极限', '忍不住了……绿条一归零就「炸裆」！铃一响，冲厕所抢隔间！', { urgent: true, hold: 3600 });
+    setTimeout(teachEndurance, 800);
   }
   // 等画布与 HUD 就位再开场
   setTimeout(intro, 350);
