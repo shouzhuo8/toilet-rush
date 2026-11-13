@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>课间特急 · 道具美术原型与动画演示</title>
+<style>
+  :root { --bg:#171310; --panel:#241d17; --gold:#FDE047; --ink:#1F1A17; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: #FFF7ED; font-family: system-ui, "PingFang SC", sans-serif; padding: 22px 18px 60px; }
+  h1 { font-size: 24px; color: var(--gold); text-shadow: 2px 3px 0 #000; letter-spacing: 2px; }
+  h2 { font-size: 16px; margin: 26px 0 12px; color: var(--gold); border-left: 5px solid var(--gold); padding-left: 10px; }
+  .sub { color: #A8A29E; font-size: 12px; margin-top: 6px; line-height: 1.6; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
+  .card { background: var(--panel); border: 3px solid #8A5A3B; border-radius: 14px; padding: 10px; text-align: center; box-shadow: 0 6px 0 #0006, 0 10px 24px #0008; }
+  .card canvas { width: 120px; height: 120px; image-rendering: pixelated; display: block; margin: 0 auto; }
+  .card .nm { margin-top: 6px; font-size: 13px; font-weight: 900; color: var(--gold); }
+  .card .ds { font-size: 10px; color: #A8A29E; margin-top: 2px; }
+  .demos { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-top: 14px; }
+  .demo { background: var(--panel); border: 3px solid #8A5A3B; border-radius: 14px; padding: 10px; }
+  .demo canvas { width: 100%; height: auto; image-rendering: pixelated; border-radius: 8px; background: #0E0C0A; display: block; }
+  .demo .t { font-size: 13px; font-weight: 900; color: var(--gold); margin-bottom: 6px; }
+  .demo .d { font-size: 11px; color: #A8A29E; margin-top: 6px; line-height: 1.5; }
+  .note { margin-top: 26px; font-size: 12px; color: #78716C; line-height: 1.7; }
+</style>
+</head>
+<body>
+<h1>道具美术原型 · 动画演示</h1>
+<div class="sub">全部为程序化像素绘制（无外部图片）；尺寸按游戏内 1:1 绘制后放大展示。动画循环播放。</div>
+
+<h2>① 道具原型（10 件）</h2>
+<div class="grid" id="items"></div>
+
+<h2>② 从门口捅入（拖把/扫把）</h2>
+<div class="demos">
+  <div class="demo"><div class="t">捅入 · 第一视角</div><canvas id="cPoke" width="640" height="360"></canvas><div class="d">杆先伸进门缝 → 布头滑入 → 顶到位抖动 → 抽回</div></div>
+  <div class="demo"><div class="t">闯入 · 第一视角</div><canvas id="cIntrude" width="640" height="360"></canvas><div class="d">门被撞开 → 逆光剪影 → 木屑飞溅 → 厕纸飞出 → 退去</div></div>
+  <div class="demo"><div class="t">爬门 / 爬下</div><canvas id="cClimb" width="640" height="360"></canvas><div class="d">助跑起跳 → 攀上门楣 → 翻越 → 内侧下降 → 落地尘土（掉一只鞋）</div></div>
+</div>
+
+<div class="note">
+产物：<code>prototype/art.js</code> 新增 <code>itemLarge</code>（10 件道具大图原型）、<code>demoPoke</code> / <code>demoIntrude</code> / <code>demoClimb</code>（三组演示动画）。<br>
+接入：第一视角隔间内已用扫把头从门缝伸入表现"被捅"；闯入演出已接入 evict。爬门演出可接入 raidPaper（翻墙取纸）。
+</div>
+
+<script src="./art.js"></script>
+<script>
+(function () {
+  const A = window.ART;
+  const ITEMS = [
+    ['mop', '拖把', '木杆+金属箍+布条头'],
+    ['broom', '扫把', '细杆+绑绳+散穗'],
+    ['plunger', '马桶搋子', '木柄+橡胶吸盘'],
+    ['wire', '铁丝', '盘绕+弯钩'],
+    ['ladder', '梯子', '双柱+横档'],
+    ['paper', '卫生纸', '纸卷+垂纸'],
+    ['mask', '口罩', '褶皱+耳挂'],
+    ['comic', '漫画书', '封面+书脊'],
+    ['soda', '憋气糖', '糖罐+标签'],
+    ['poster', '假指示贴', '翘边贴纸'],
+  ];
+  const host = document.getElementById('items');
+  const ctxs = [];
+  for (const [k, nm, ds] of ITEMS) {
+    const card = document.createElement('div'); card.className = 'card';
+    const cv = document.createElement('canvas'); cv.width = 120; cv.height = 120;
+    const nmEl = document.createElement('div'); nmEl.className = 'nm'; nmEl.textContent = nm;
+    const dsEl = document.createElement('div'); dsEl.className = 'ds'; dsEl.textContent = ds;
+    card.appendChild(cv); card.appendChild(nmEl); card.appendChild(dsEl); host.appendChild(card);
+    ctxs.push({ cv, ctx: cv.getContext('2d'), k });
+  }
+
+  const poke = document.getElementById('cPoke'), pctx = poke.getContext('2d');
+  const intr = document.getElementById('cIntrude'), ictx = intr.getContext('2d');
+  const climb = document.getElementById('cClimb'), cctx = climb.getContext('2d');
+
+  function drawItems(t) {
+    for (const { cv, ctx, k } of ctxs) {
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      // 背景光晕
+      const g = ctx.createRadialGradient(60, 60, 8, 60, 60, 60);
+      g.addColorStop(0, 'rgba(253,224,71,.16)'); g.addColorStop(1, 'rgba(253,224,71,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 120, 120);
+      A.itemLarge(ctx, k, 60, 74, 1.15, t);
+    }
+  }
+  function drawDemo(ctx, cv, fn, t) {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.save();
+    const shake = fn(ctx, 0, 0, cv.width, cv.height, t) || 0;
+    ctx.restore();
+    if (shake) { /* 抖动由外层容器模拟 */ cv.style.transform = `translate(${(Math.random() - .5) * shake}px, 0)`; }
+    else cv.style.transform = '';
+  }
+
+  let t0 = performance.now();
+  function loop(now) {
+    const t = (now - t0) / 1000;
+    drawItems(t);
+    drawDemo(pctx, poke, A.demoPoke, t);
+    drawDemo(ictx, intr, A.demoIntrude, t);
+    drawDemo(cctx, climb, A.demoClimb, t);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
