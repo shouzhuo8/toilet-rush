@@ -164,7 +164,7 @@ class Sim {
   /* ---- 对外 API ---- */
   queue(pid, type, target) { const iid = this.iidSeq++; this.pending.push({ iid, pid, type, target }); return iid; }
   cancel(pid) { const g = this.players[pid].charging; if (g) g.cancelReq = true; }
-  drop(pid) { const p = this.players[pid]; if (p.charging) this._abortGuide(p, p.charging, 'drop'); } // C10：断线=目标失效
+  drop(pid) { const p = this.players[pid]; if (p.charging) this._abortGuide(p, p.charging, 'drop'); if (p.atStall >= 0) this._leaveStall(p, 'drop'); } // C10：断线=目标失效
   get alivePlayers() { return this.players.filter(p => !p.final); }
 
   /* ---- 连接口与切图事务（MAP-INTERACTION §2）---- */
@@ -181,6 +181,7 @@ class Sim {
   switchMap(p, c) {
     // 2. ABORT 在途引导（ARCH-9.5 目标失效：全额回滚；KNOCK 半额 CD 例外）
     if (p.charging) this._abortGuide(p, p.charging, 'switch');
+    if (p.atStall >= 0) this._leaveStall(p, 'switch'); // 防御：隔间内不换图
     if (p.climbed >= 0) p.climbed = -1; // 翻入资格丢失，已取的纸保留
     // 3~6. 换图 + 落点 + 冷却（订阅/快照在联机版扩展，单机即内存态）
     p.mapId = c.to;
@@ -333,11 +334,7 @@ class Sim {
   // 裁决#18：光着屁股出门（离开隔间、进入移动态；10s 倒计时继续）
   _goNaked(p) {
     if (p.state !== 'post' || !p.post) return;
-    if (p.atStall >= 0) {
-      const st = this.stalls[p.atStall];
-      if (st.occ === p) { st.occ = null; st.occKind = null; st.occId++; st.harass = 0; this.clearFake(st); }
-      p.x = st.doorPt.x; p.y = st.doorPt.y - 8; p.atStall = -1;
-    }
+    if (p.atStall >= 0) this._leaveStall(p, 'naked');
     p.state = 'idle'; p.naked = true; p.relief = null;
     this._ev('nakedOut', { pid: p.id });
   }
@@ -350,7 +347,7 @@ class Sim {
   _finalize(p, kind, penalty = 0) {
     if (p.final) return;
     p.charging = null; p.state = 'idle'; p.relief = null; p.post = null; p.naked = false; p.climbed = -1;
-    if (p.atStall >= 0) { const st = this.stalls[p.atStall]; if (st.occ === p) { st.occ = null; st.occKind = null; st.occId++; st.harass = 0; this.clearFake(st); } p.atStall = -1; }
+    if (p.atStall >= 0) this._leaveStall(p, 'final');
     p.final = { kind, time: kind === 'done' ? Math.max(0.05, (this.t - this.bellT) / TICK + penalty / TICK) : (this.t - this.bellT) / TICK };
     this.finalCount++;
     this._ev('final', { pid: p.id, kind, time: p.final.time });
@@ -390,9 +387,9 @@ class Sim {
       }
       case 'move': { return; } // 裁决#22：跑/走/潜已废除
       case 'enterStall': {
-        if (!st || dist(p, st.doorPt) > (inToilet(p) ? NUM.reach : NUM.actR + 30)) return fail('far');
+        if (!st || p.atStall >= 0 || dist(p, st.doorPt) > (inToilet(p) ? NUM.reach : NUM.actR + 30)) return fail('far');
         if (this.t < p.reenterCDUntil) return fail('cd');
-        if (st.occ || st.obstacle) return fail(st.obstacle ? 'dirty' : 'occupied');
+        if (st.occ) return fail('occupied'); // 裁决#33：障碍不再拒绝进入，进去才发现
         if (st.lockBy >= 0 && st.lockBy !== p.id && this.t < st.lockUntil) return fail('lock');
         this._startGuide(p, { type: 'enterStall', dur: NUM.guide.enter, target: tg, occId: st.occId });
         return;
@@ -426,7 +423,9 @@ class Sim {
         return;
       }
       case 'clear': {
-        if (!st || !st.obstacle || st.occ || dist(p, st.doorPt) > (inToilet(p) ? NUM.reach : NUM.actR + 26)) return fail('far');
+        const inside = p.atStall >= 0;
+        if (inside) { if (!st || st.idx !== p.atStall || !st.obstacle) return fail('target'); }
+        else if (!st || !st.obstacle || st.occ || dist(p, st.doorPt) > (inToilet(p) ? NUM.reach : NUM.actR + 26)) return fail('far');
         let dur = 0, kind = null;
         if (this._hasWeapon(p, 'plunger')) { dur = st.obstacle === 'anaconda' ? NUM.guide.clearPA : NUM.guide.clearPB; kind = 'plunger'; }
         else if (st.obstacle === 'anaconda' && this._hasWeapon(p, 'broom')) { dur = NUM.guide.clearBA; kind = 'broom'; }
@@ -469,11 +468,13 @@ class Sim {
         this._ev('flushFake', { pid: p.id, idx: st.idx, truth: st.occ === 'dean' ? 'dean' : st.occ ? 'player' : 'none' });
         return;
       }
-      case 'giveup': {
-        if (p.state === 'relief' || p.state === 'post') {
-          if (p.relief) p.relief.left = p.relief.total; // 进度清零
-          p.post = null; p.state = 'idle'; p.reenterCDUntil = this.t + NUM.cd.reenter;
-          if (p.atStall >= 0) { const st2 = this.stalls[p.atStall]; if (st2.occ === p) { st2.occ = null; st2.occKind = null; st2.occId++; st2.harass = 0; } p.x = st2.doorPt.x; p.y = st2.doorPt.y - 6; p.atStall = -1; }
+      case 'giveup': case 'leaveStall': {
+        const inStallNow = p.atStall >= 0;
+        if (p.state === 'post' && p.post) { this._goNaked(p); return; } // post 态出门 = 光屁股
+        if (inStallNow || p.state === 'relief') {
+          if (p.relief) p.relief.left = p.relief.total;
+          p.state = 'idle'; p.reenterCDUntil = this.t + NUM.cd.reenter;
+          if (inStallNow) this._leaveStall(p, 'giveup');
           this._ev('giveup', { pid: p.id });
         }
         return;
@@ -504,16 +505,15 @@ class Sim {
         return;
       }
       case 'takePaper': {
-        if (!p.naked || !st) return fail('cond');
+        if (!p.naked || !st || p.atStall >= 0) return fail('cond');
         if (dist(p, st.doorPt) > (inToilet(p) ? NUM.reach : NUM.actR + 26)) return fail('far');
-        if (!st.hasPaper) return fail('nopaper');
-        if (st.occ || st.obstacle) return fail('occupied');
+        if (st.occ) return fail('occupied'); // 纸/障碍未知：进门后才揭晓
         if (st.lockBy >= 0 && st.lockBy !== p.id && this.t < st.lockUntil) return fail('lock');
         this._startGuide(p, { type: 'takePaper', dur: NUM.guide.takePaper, target: tg, occId: st.occId });
         return;
       }
       case 'raidPaper': { // 光屁股翻墙/撬锁进有人的有纸房（不逼出）
-        if (!p.naked || !st || !st.hasPaper || !st.occ || st.occ === 'dean') return fail('cond');
+        if (!p.naked || !st || !st.occ || st.occ === 'dean' || p.atStall >= 0) return fail('cond'); // 纸未知：翻进去才发现
         if (dist(p, st.doorPt) > (inToilet(p) ? NUM.reach : NUM.actR + 26)) return fail('far');
         const tool = p.items.includes('ladder') ? 'ladder' : p.items.includes('wire') ? 'wire' : null;
         if (!tool) return fail('noitem');
@@ -544,12 +544,10 @@ class Sim {
     p.charging = null;
     switch (g.type) {
       case 'enterStall': {
-        if (!st || st.occ || st.obstacle || st.lockBy >= 0 && st.lockBy !== p.id && this.t < st.lockUntil) return this._ev('intentFail', { pid: p.id, why: 'occupied', act: g.type });
-        st.occ = p; st.occKind = 'player'; st.occId++; st.harass = 0; this.clearFake(st); p.atStall = st.idx;
-        p.x = st.inPt.x; p.y = st.inPt.y;
-        this._startRelief(p, 'poop');
-        this._ev('enterStall', { pid: p.id, idx: st.idx }); return;
+        if (!st || st.occ || st.lockBy >= 0 && st.lockBy !== p.id && this.t < st.lockUntil) return this._ev('intentFail', { pid: p.id, why: 'occupied', act: g.type });
+        this._enterStall(p, st); return;
       }
+      case 'leaveStall': { if (p.atStall >= 0) this._leaveStall(p, 'manual'); return; }
       case 'poke': case 'bonk': {
         this._consume(p, g.type === 'poke' ? 'broom' : 'plunger');
         this._addHarass(st, 1, p.id, g.type); return;
@@ -590,11 +588,18 @@ class Sim {
         this._ev('paperDone', { pid: p.id, vid: occ.id }); return;
       }
       case 'takePaper': {
-        if (!st || !st.hasPaper || st.obstacle || (!g.climbed && st.occ)) { this._ev('intentFail', { pid: p.id, why: 'target', act: 'takePaper' }); return; }
-        st.hasPaper = false;
-        if (g.climbed) { this._ev('paperGot', { pid: p.id, idx: st.idx }); p.hasClimbedPaper = true; return; } // 翻入取纸：等爬出才定型
-        this.clearFake(st);
-        this._cleanFinish(p, 'paper'); return;
+        if (!st || (!g.climbed && st.occ)) { this._ev('intentFail', { pid: p.id, why: 'target', act: 'takePaper' }); return; }
+        if (g.climbed) { // 翻入取纸：等爬出才定型
+          if (!st.hasPaper) { this._ev('raidFail', { pid: p.id, idx: st.idx }); return; }
+          st.hasPaper = false; this._ev('paperGot', { pid: p.id, idx: st.idx }); p.hasClimbedPaper = true; return;
+        }
+        // 开门探纸（裁决#33）：进门后才知道
+        const wasNaked = p.naked;
+        this._ev('stallReveal', { pid: p.id, idx: st.idx, hasPaper: st.hasPaper, obstacle: st.obstacle });
+        if (st.hasPaper && !st.obstacle) { st.hasPaper = false; this._cleanFinish(p, 'paper'); return; }
+        this._ev(st.obstacle ? 'stallBlocked' : 'stallNoPaper', { pid: p.id, idx: st.idx, obstacle: st.obstacle });
+        p.reenterCDUntil = this.t + NUM.cd.reenter;
+        return;
       }
       case 'climbOut': {
         if (p.climbed !== g.target.idx || !p.hasClimbedPaper) { this._ev('intentFail', { pid: p.id, why: 'target', act: 'climbOut' }); return; }
@@ -607,7 +612,9 @@ class Sim {
         const kind = g.clearKind; if (kind === 'plunger') this._consume(p, 'plunger'); else this._consume(p, 'broom');
         st.obstacle = null; this.clearFake(st);
         if (kind === 'broom' && this.rng() < NUM.splash.broom) { p.endurance -= NUM.splash.dmg; this._ev('splash', { pid: p.id }); if (p.endurance <= 0) this._finalize(p, 'blowout'); }
-        this._ev('cleared', { pid: p.id, idx: st.idx, kind }); this._noise(st.doorPt.x, st.doorPt.y, 'clear'); return;
+        this._ev('cleared', { pid: p.id, idx: st.idx, kind }); this._noise(st.doorPt.x, st.doorPt.y, 'clear');
+        if (p.atStall === st.idx && p.state === 'idle') this._startRelief(p, 'poop'); // 隔间内清完直接开拉
+        return;
       }
     }
   }
@@ -620,6 +627,24 @@ class Sim {
     }
     if (st.occ && st.occ !== 'dean') { this._addHarass(st, 3, p.id, g.type); return; } // 普通进入类 = 骚扰+3
     this._ev('pushEmpty', { pid: p.id, idx: g.target.idx });
+  }
+  /* ---- 隔间进出（裁决#33：门只显示占用，细节进门才揭示）---- */
+  _enterStall(p, st) {
+    st.occ = p; st.occKind = 'player'; st.occId++; st.harass = 0; st.occSince = this.t; this.clearFake(st);
+    p.atStall = st.idx; p.x = st.inPt.x; p.y = st.inPt.y;
+    // 只单播给进入者：有没有纸、堵没堵
+    this._ev('stallReveal', { pid: p.id, idx: st.idx, hasPaper: st.hasPaper, obstacle: st.obstacle });
+    this._ev('enterStall', { pid: p.id, idx: st.idx });
+    if (st.obstacle) { p.state = 'idle'; this._ev('stallBlocked', { pid: p.id, idx: st.idx, obstacle: st.obstacle }); return; }
+    this._startRelief(p, 'poop');
+  }
+  _leaveStall(p, reason) {
+    const idx = p.atStall; if (idx < 0) return;
+    const st = this.stalls[idx];
+    if (st && st.occ === p) { st.occ = null; st.occKind = null; st.occId++; st.harass = 0; st.occSince = 0; this.clearFake(st); }
+    p.atStall = -1; p.relief = null;
+    if (st) { p.x = st.doorPt.x; p.y = st.doorPt.y; }
+    this._ev('stallExit', { pid: p.id, idx, reason });
   }
   _startRelief(p, kind) {
     let total = NUM.relief.poop;
@@ -658,8 +683,7 @@ class Sim {
     occ.staggerUntil = this.t + NUM.prot.staggerL;
     occ.drainBuffUntil = this.t + NUM.prot.evictDrain;
     occ.immuneUntil = this.t + NUM.prot.evictImmune;
-    occ.x = st.doorPt.x; occ.y = st.doorPt.y - 8; occ.atStall = -1; occ.state = 'idle'; occ.post = null;
-    st.occ = null; st.occKind = null; st.occId++; st.harass = 0; this.clearFake(st);
+    this._leaveStall(occ, 'evict'); occ.state = 'idle';
     st.lockBy = (st.c_first && st.c_first.pid) ?? byPid; st.c_first = null; // 优先锁给先启动者（C3）
     st.lockUntil = this.t + NUM.prot.lock;
     this._ev('evict', { idx: st.idx, by: byPid, vid: occ.id });
@@ -696,6 +720,27 @@ class Bot {
       this.role = p.debuff === 'poo' ? (sim.rng() < 0.7 ? 'A' : 'F') : (sim.rng() < 0.25 ? 'B' : 'F');
       this.wps = ROUTES[this.role === 'A' ? 'A' : this.role === 'B' ? 'B' : 'fast'].slice(); this.wi = 0;
     }
+    // ── 隔间内（裁决#33）：自行完成/清障/弃坑 ──
+    if (p.atStall >= 0) {
+      const st = sim.stalls[p.atStall];
+      if (p.state === 'relief') {
+        if (p.turboLeft > 0 && p.relief && p.relief.left > s(6)) sim.queue(p.id, 'turbo');
+        return;
+      }
+      if (p.state === 'post') {
+        if (p.post && p.post.shouted && sim.rng() < 0.35) sim.queue(p.id, 'break');
+        else sim.queue(p.id, 'shout');
+        return;
+      }
+      // 堵塞态：有工具就清，没有就换一间
+      if (st && st.obstacle) {
+        if (p.items.includes('plunger') || (st.obstacle === 'anaconda' && p.items.includes('broom'))) sim.queue(p.id, 'clear', { idx: p.atStall });
+        else { this.memoBlocked = this.memoBlocked || {}; this.memoBlocked[p.atStall] = 1; sim.queue(p.id, 'leaveStall'); }
+        return;
+      }
+      sim.queue(p.id, 'leaveStall');
+      return;
+    }
     // 顺路捡道具
     for (const it of sim.items) {
       if (it.taken || dist(p, it) > NUM.pickR - 2) continue;
@@ -716,12 +761,12 @@ class Bot {
         else sim.queue(p.id, 'climbOut', { idx: p.climbed });
         return;
       }
-      const paperRoom = sim.stalls.find(st2 => st2.hasPaper && !st2.occ && !st2.obstacle);
-      const raidRoom = sim.stalls.find(st2 => st2.hasPaper && st2.occ && st2.occ !== 'dean' && !st2.obstacle);
+      const paperRoom = sim.stalls.find(st2 => !st2.occ && !(this.memoBlocked && this.memoBlocked[st2.idx]) && !(this.memoNoPaper && this.memoNoPaper[st2.idx]));
+      const raidRoom = sim.stalls.find(st2 => st2.occ && st2.occ !== 'dean');
       const target = paperRoom || ((p.items.includes('ladder') || p.items.includes('wire')) ? raidRoom : null);
       if (target) {
         if (dist(p, target.doorPt) <= NUM.reach - 8) {
-          if (target === paperRoom) sim.queue(p.id, 'takePaper', { idx: target.idx });
+          if (target === paperRoom) { this.memoNoPaper = this.memoNoPaper || {}; this.memoNoPaper[target.idx] = 1; sim.queue(p.id, 'takePaper', { idx: target.idx }); }
           else sim.queue(p.id, 'raidPaper', { idx: target.idx });
         } else { const ax = target.doorPt.x - p.x, ay = target.doorPt.y - p.y, ad = Math.hypot(ax, ay) || 1; movePlayer(p, ax / ad, ay / ad, Math.min(ad / NUM.speed, 0.5)); }
         return;
@@ -903,7 +948,7 @@ if (typeof window !== 'undefined') (function () {
     if (sim.phase === 'prep' && ev0Tick()) tipOnce('start', '💡 铃前可在教室自由走动，出不去门。先熟悉按键！', 'big', 4.5);
     for (const ev of sim.events) {
       const p = sim.players[ev.pid] || null;
-      if (ev.type === 'switchMap' && ev.to === 2 && ev.pid === 0) tipOnce('toilet', '💡 5 间隔间：绿灯空房可进，红灯要闯；卷纸挂墙是明牌', 'warn', 4.2);
+      if (ev.type === 'switchMap' && ev.to === 2 && ev.pid === 0) tipOnce('toilet', '💡 绿灯=空房可直接进，红灯=有人要闯；里面有没有纸、堵没堵，进去才知道', 'warn', 4.6);
       if (ev.type === 'postStuck' && ev.pid === 0) tipOnce('post', '💡 没纸？光屁股出门去别间取纸，或洗手台优雅结束(+5s)', 'warn', 4.2);
       if (ev.type === 'punchHit' && ev.vid === 0) tipOnce('punched', '💡 挨揍 8 次会被打出屎！P 键还手，击退不硬直', 'danger', 3.8);
       if (ev.type === 'bell' && ev.kind === 'pre') tipOnce('prebell', '💡 预备铃：全员忍耐流失 ×1.5，别再闲逛了', 'warn', 3.2);
@@ -916,9 +961,10 @@ if (typeof window !== 'undefined') (function () {
         case 'deanIn': banner('！！主任来了！！', 'danger', 2.6); SND.deanIn(); if (PFX) spawnPfx(PFX.exclamation, 550, 300, { palette: ['#1a0e14', '#7f1d1d', '#dc2626', '#fca5a5', '#fff7ed'] }); break;
         case 'deanOut': banner('主任哼着歌走了~', 'ok', 2); SND.deanOut(); break;
         case 'deanAnger': banner(`${(sim.players[ev.pid] || {}).name || '?'} 被主任没收道具轰出厕所！`, 'warn', 2.5); addFx(1150, 320, 'smoke', '#b91c1c', 22); SND.anger(); break;
-        case 'harass': { const st = sim.stalls[ev.idx]; if (PFX) spawnPfx(PFX.hitSpark, st.doorPt.x, st.doorPt.y - 10, {}, 2, 0.8); float(st.doorPt.x - 20, st.doorPt.y - 14, `骚扰 ${ev.val}/3`, '#fdba74'); SND.noise(); break; }
-        case 'evict': { const st = sim.stalls[ev.idx]; if (PFX) spawnPfx(PFX.groundSlam, st.doorPt.x, st.doorPt.y + 30, {}, 2, 1.1); addFx(st.doorPt.x, st.doorPt.y - 20, 'launch', '#f97316', 20); float(st.doorPt.x, st.doorPt.y - 40, '被逼出来了！', '#fb923c'); SND.evict(); break; }
+        case 'harass': { const st = sim.stalls[ev.idx]; if (you.atStall === ev.idx || ev.by === 0) st.pokingUntil = sim.t + s(0.3); if (PFX) spawnPfx(PFX.hitSpark, st.doorPt.x, st.doorPt.y - 10, {}, 2, 0.8); if (you.atStall === ev.idx) addFx(500, 300, 'hurt', '#B91C1C', 3); SND.noise(); break; }
+        case 'evict': { playAnim(ev.vid, 'evictFly', 0.9); const st = sim.stalls[ev.idx]; if (PFX) spawnPfx(PFX.groundSlam, st.doorPt.x, st.doorPt.y + 30, {}, 2, 1.1); addFx(st.doorPt.x, st.doorPt.y - 20, 'launch', '#f97316', 20); float(st.doorPt.x, st.doorPt.y - 40, '被逼出来了！', '#fb923c'); SND.evict(); break; }
         case 'final':
+          playAnim(ev.pid, ev.kind === 'done' ? 'victory' : ev.kind === 'blowout' ? 'blowout' : 'dragged', ev.kind === 'done' ? 1.2 : 1.4);
           if (ev.kind === 'blowout' && PFX) spawnPfx(PFX.cartoonPow, p.x, p.y, { text: '炸裆！', palette: ['#1a0e14', '#6e1a12', '#8d5a3a', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, p.mapId, 1.8);
           if (ev.kind === 'done' && PFX) spawnPfx(PFX.confetti, p.x, p.y - 30, {}, p.mapId, 1.2);
           if (ev.kind === 'done') { addFx(p.x, p.y, 'confetti', '#4ade80', 24); float(p.x, p.y - 30, `${p.name} 完成！${ev.time.toFixed(1)}s`, '#86efac'); SND.done(); }
@@ -929,22 +975,33 @@ if (typeof window !== 'undefined') (function () {
         case 'infect': float(p.x, p.y - 40, `被传染 -${ev.loss.toFixed(0)}`, '#a3e635'); break;
         case 'caught': banner('你被主任当场抓获……判负！', 'danger', 3); break;
         case 'postStuck': if (ev.pid === 0) showPostUI(true); float(p.x, p.y - 30, '没纸了！！光屁股出门找纸/洗手', '#fbbf24'); break;
-        case 'nakedOut': { if (ev.pid === 0) showPostUI(false); addFx(p.x, p.y, 'smoke', '#fbcfe8', 10); banner('10s 内：去有纸隔间取纸 / 洗手台优雅结束', 'warn', 2.4); break; }
+        case 'nakedOut': { playAnim(ev.pid, 'nakedDash', 0.5); if (ev.pid === 0) showPostUI(false); addFx(p.x, p.y, 'smoke', '#fbcfe8', 10); banner('10s 内：去有纸隔间取纸 / 洗手台优雅结束', 'warn', 2.4); break; }
         case 'paperGot': { if (!p.hasClimbedPaper) banner('体面人！', 'ok', 1.6); break; }
-        case 'climbIn': { const st = sim.stalls[ev.idx]; banner('梯子架好 → 取纸 → 原路爬出', 'warn', 2); break; }
-        case 'climbOut': { banner('神不知鬼不觉', 'ok', 1.6); break; }
+        case 'climbIn': { playAnim(ev.pid, 'climb', 0.8); const st = sim.stalls[ev.idx]; banner('梯子架好 → 取纸 → 原路爬出', 'warn', 2); break; }
+        case 'climbOut': { playAnim(ev.pid, 'climb', 0.8); banner('神不知鬼不觉', 'ok', 1.6); break; }
         case 'raidFail': float(p.x, p.y - 40, '里面没纸/没人了…', '#fca5a5'); break;
         case 'switchMap': if (ev.pid === 0) { cam.x = you.x; cam.y = you.y; banner(`🚪 进入【${MAPS[ev.to].name}】`, 'ok', 1.2); beep(150, .12, 'sine', .07); } break;
-        case 'punchHit': { const v = sim.players[ev.vid]; if (PFX) spawnPfx(PFX.cartoonPow, v.x, v.y - 16, { text: '砰！', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, v.mapId, 0.9); addFx(v.x, v.y, 'ripple', '#fdba74', 6); beep(180, .08, 'square', .09); break; }
+        case 'punchHit': { playAnim(ev.vid, 'hit', 0.3); playAnim(ev.pid, 'punchLand', 0.25); addShake(3, 0.12); const v = sim.players[ev.vid]; if (PFX) spawnPfx(PFX.cartoonPow, v.x, v.y - 16, { text: '砰！', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, v.mapId, 0.9); addFx(v.x, v.y, 'ripple', '#fdba74', 6); beep(180, .08, 'square', .09); break; }
         case 'punchMiss': float(p.x, p.y - 30, '挥空了…', '#d1d5db'); break;
         case 'beatenOut': if (PFX) spawnPfx(PFX.cartoonPow, p.x, p.y, { text: '被打出屎！', palette: ['#1a0e14', '#6e1a12', '#c8361a', '#f47a24', '#ffc23c', '#fff07a', '#ffffff'] }, p.mapId, 1.6); banner(`${(sim.players[ev.pid]||{}).name} 被打出屎了！！`, 'danger', 2.8); addFx(p.x, p.y, 'smoke', '#8d5a3a', 26); SND.blowout(); break;
-        case 'washDone': { banner('讲卫生 · 优雅结束', 'ok', 1.8); break; }
+        case 'washDone': { playAnim(ev.pid, 'wash', 1.2); banner('讲卫生 · 优雅结束', 'ok', 1.8); break; }
         case 'shout': float(p.x, p.y - 40, '谁有纸！！', '#fde047'); SND.noise(); break;
-        case 'paperDone': banner(`${p.name} 递纸！人情+`, 'ok', 2); break;
+        case 'paperDone': playAnim(ev.pid, 'paperHand', 0.6); banner(`${p.name} 递纸！人情+`, 'ok', 2); break;
         case 'pushStart': banner('推门中……听到动静可取消！(X)', 'warn', 2); beep(90, .3, 'sawtooth', .07); break;
         case 'pushCancel': banner('你缩回了手……保命要紧', 'ok', 1.6); break;
+        case 'stallReveal': {
+          if (ev.pid !== 0) break;
+          const st = sim.stalls[ev.idx];
+          if (ev.obstacle) tipOnce('s_rev_o', '🚽 进门了……这坑堵着！' + (ev.obstacle === 'anaconda' ? '黄金巨蟒盘在坑里，得用马桶搋子。' : '草莓塔立起来了，得用马桶搋子。'), 'warn', 5);
+          else if (ev.hasPaper) tipOnce('s_rev_p', '🧻 纸架上有卷纸，稳了。', 'ok', 3.4);
+          else tipOnce('s_rev_n', '🧻 纸架是空的！拉完得光屁股出去找纸，或者去洗手台。', 'warn', 5);
+          break;
+        }
+        case 'stallBlocked': if (ev.pid === 0) { you._intrusionUntil = sim.t + s(0.9); beep(120, .3, 'sawtooth', .1); } break;
+        case 'stallNoPaper': if (ev.pid === 0) tipOnce('s_nop', '🚪 这间没纸，换一间。', 'warn', 3); break;
+        case 'stallExit': { if (ev.pid === 0) { const st = sim.stalls[ev.idx]; if (st) { cam.x = st.doorPt.x; cam.y = st.doorPt.y; } } break; }
         case 'pushEmpty': float(1150, 400, '门后居然没人', '#ccc'); break;
-        case 'turbo': SND.noise(); if (PFX) spawnPfx(PFX.chargeUp, p.x, p.y - 30, {}, 2, 1.2); break;
+        case 'turbo': playAnim(ev.pid, 'turboPush', 1.2); addShake(2, 0.4); SND.noise(); if (PFX) spawnPfx(PFX.chargeUp, p.x, p.y - 30, {}, 2, 1.2); break;
         case 'cleared': float(sim.stalls[ev.idx].doorPt.x, sim.stalls[ev.idx].doorPt.y - 30, '疏通！', '#a7f3d0'); break;
         case 'splash': float(p.x, p.y - 30, '溅了一身 -5', '#a16207'); break;
         case 'pick': float(p.x, p.y - 24, `+${ITEM_DEFS[ev.kind].name}`, '#e5e7eb'); SND.pick(); break;
@@ -1071,6 +1128,30 @@ if (typeof window !== 'undefined') (function () {
   function scanContextActions() {
     const acts = [];
     if (you.final || you.charging) return acts;
+    // ── 隔间内（第一视角，裁决#33）──
+    if (you.atStall >= 0) {
+      const st = sim.stalls[you.atStall];
+      if (you.state === 'post') {
+        acts.push({ key: 'shout', label: '喊要纸', icon: '📢', run: () => sim.queue(0, 'shout'), at: { x: 500, y: 420 } });
+        acts.push({ key: 'break', label: '破罐(+5s)', icon: '💩', run: () => sim.queue(0, 'break'), at: { x: 500, y: 470 } });
+        acts.push({ key: 'nakedOut', label: '光屁股出门', icon: '🩲', run: () => sim.queue(0, 'nakedOut'), at: { x: 500, y: 520 } });
+        return acts;
+      }
+      if (you.state === 'relief') {
+        if (you.turboLeft > 0) acts.push({ key: 'turbo', label: '涡轮增压', icon: '⚡', run: () => sim.queue(0, 'turbo'), at: { x: 500, y: 420 } });
+        acts.push({ key: 'leave', label: '提裤子出门', icon: '🚪', run: () => sim.queue(0, 'leaveStall'), at: { x: 500, y: 470 } });
+        return acts;
+      }
+      // 堵塞态
+      if (st && st.obstacle) {
+        if (you.items.includes('plunger') || (st.obstacle === 'anaconda' && you.items.includes('broom')))
+          acts.push({ key: 'clear', label: st.obstacle === 'anaconda' ? '通巨蟒' : '清草莓塔', icon: '🪠', run: () => sim.queue(0, 'clear', { idx: you.atStall }), at: { x: 500, y: 420 } });
+        acts.push({ key: 'leave', label: '换一间', icon: '🚪', run: () => sim.queue(0, 'leaveStall'), at: { x: 500, y: 470 } });
+        return acts;
+      }
+      acts.push({ key: 'leave', label: '出门', icon: '🚪', run: () => sim.queue(0, 'leaveStall'), at: { x: 500, y: 470 } });
+      return acts;
+    }
     // 道具拾取
     for (const it of sim.items) {
       if (it.taken || it.mapId !== you.mapId || dist(you, it) > NUM.pickR) continue;
@@ -1083,10 +1164,10 @@ if (typeof window !== 'undefined') (function () {
     if (you.naked) {
       for (const st of sim.stalls) {
         if (dist(you, st.doorPt) > NUM.reach) continue;
-        if (st.occ && st.occ !== 'dean' && st.hasPaper && (you.items.includes('ladder') || you.items.includes('wire')))
-          acts.push({ key: 'raid', label: '翻进去拿纸', icon: '🪜', run: () => sim.queue(0, 'raidPaper', { idx: st.idx }), at: { x: st.doorPt.x, y: st.doorPt.y - 56 } });
-        else if (!st.occ && !st.obstacle && st.hasPaper)
-          acts.push({ key: 'takePaper', label: '拿卷纸', icon: '🧻', run: () => sim.queue(0, 'takePaper', { idx: st.idx }), at: { x: st.doorPt.x, y: st.doorPt.y - 56 } });
+        if (st.occ && st.occ !== 'dean' && (you.items.includes('ladder') || you.items.includes('wire')))
+          acts.push({ key: 'raid', label: '翻进去找纸', icon: '🪜', run: () => sim.queue(0, 'raidPaper', { idx: st.idx }), at: { x: st.doorPt.x, y: st.doorPt.y - 56 } });
+        else if (!st.occ)
+          acts.push({ key: 'takePaper', label: '开门找纸', icon: '🧻', run: () => sim.queue(0, 'takePaper', { idx: st.idx }), at: { x: st.doorPt.x, y: st.doorPt.y - 56 } });
       }
       if (dist(you, SINK) <= NUM.reach) acts.push({ key: 'wash', label: '洗手收工(+5s)', icon: '🧼', run: () => sim.queue(0, 'wash'), at: { x: SINK.x, y: SINK.y - 60 } });
       return acts;
@@ -1104,8 +1185,8 @@ if (typeof window !== 'undefined') (function () {
       const at = { x: st.doorPt.x, y: st.doorPt.y - 56 };
       if (st.occ && st.occ !== 'dean' && st.occ.post && you.items.includes('paper'))
         acts.push({ key: 'paper', label: '递纸', icon: '🧻', run: () => sim.queue(0, 'paper', { idx: st.idx }), at });
-      if (!st.occ && !st.obstacle)
-        acts.push({ key: 'enter', label: st.hasPaper ? '开始拉屎(有纸)' : '开始拉屎(没纸!)', icon: '🚽', run: () => sim.queue(0, 'enterStall', { idx: st.idx }), at });
+      if (!st.occ)
+        acts.push({ key: 'enter', label: '进隔间', icon: '🚽', run: () => sim.queue(0, 'enterStall', { idx: st.idx }), at });
       else if (!st.occ && st.obstacle && (you.items.includes('plunger') || st.obstacle === 'anaconda' && you.items.includes('broom')))
         acts.push({ key: 'clear', label: st.obstacle === 'anaconda' ? '通巨蟒' : '清草莓塔', icon: '🪠', run: () => sim.queue(0, 'clear', { idx: st.idx }), at });
       else if (st.occ) {
@@ -1156,6 +1237,12 @@ if (typeof window !== 'undefined') (function () {
         you.charging ? (you.charging.push ? '松手' : '取消') : '弃坑');
   }
 
+  // 一次性动作（表现层，事件驱动；不影响 Sim）
+  function playAnim(pid, kind, durSec) {
+    const p = sim.players[pid]; if (!p) return;
+    p.anim = { kind, t0: sim.t, until: sim.t + Math.max(1, Math.round(durSec * TICK)) };
+  }
+
   function doInteract() {
     // Q 键 = 触发优先级最高的上下文按钮
     const acts = scanContextActions();
@@ -1177,6 +1264,8 @@ if (typeof window !== 'undefined') (function () {
 
   /* ---- 渲染 ---- */
   const cam = { x: 750, y: 310 };
+  const shake = { amp: 0, until: 0 };
+  function addShake(amp, durSec) { shake.amp = Math.max(shake.amp, amp); shake.until = Math.max(shake.until, performance.now() / 1000 + durSec); }
   let curMapFx = 0; // 特效归属图（创建时打标）
   // 竖屏窄视口：逻辑视口 900×620（角色 1.2× 由 CSS 缩放承担）
   function syncViewport() {
@@ -1223,7 +1312,31 @@ if (typeof window !== 'undefined') (function () {
   }
   function draw(now, dtSec) {
     const A = window.ART; if (!A) return;
-    drawCam(dtSec || 0.016);
+    const dtf = dtSec || 0.016;
+    // ── 隔间内：第一视角场景（裁决#33，内外互不可见）──
+    if (you.atStall >= 0 && !you.final) {
+      const st = sim.stalls[you.atStall];
+      const hurtAcc = fx.reduce((m, e) => (e.kind === 'hurt' && e.fm === 2 ? Math.max(m, e.life) : m), 0);
+      const intr = you._intrusionUntil && sim.t < you._intrusionUntil ? Math.min(1, (you._intrusionUntil - sim.t) / (TICK * 0.9)) : 0;
+      A.stallInterior(ctx, {
+        w: cv.width, h: cv.height, t: sim.t / TICK,
+        st, p: you, idx: you.atStall, seed: sim.seed,
+        harass: st ? st.harass : 0,
+        state: you.state === 'relief' ? 'relief' : (you.state === 'post' ? 'post' : (st && st.obstacle ? 'blocked' : 'idle')),
+        hasPaper: st ? st.hasPaper : false,
+        obstacle: st ? st.obstacle : null,
+        bulge: st && st.harass >= 3 ? 1 : 0,
+        poking: st && st.pokingUntil && sim.t < st.pokingUntil,
+        intrusion: intr,
+        hurt: hurtAcc,
+      });
+      // 内景里的浮字/拟声/特效
+      for (const f of floats) { if (f.fm !== 2) continue; A.label(ctx, f.txt, f.x * cv.width / 1000, f.y * cv.height / 620, { size: 15, lw: 5, color: f.color }); }
+      for (const o of onomats) { if (o.fm !== 2) continue; A.onomat(ctx, { ...o, x: o.x * cv.width / 1000, y: o.y * cv.height / 620 }); }
+      if (sim.t < you.immuneUntil) { ctx.strokeStyle = '#FDE047'; ctx.lineWidth = 3; ctx.strokeRect(2, 2, cv.width - 4, cv.height - 4); }
+      return;
+    }
+    drawCam(dtf);
     const map = MAPS[viewMap];
     const tSec = sim.t / TICK;
     const vw = cv.width, vh = cv.height;
@@ -1232,7 +1345,9 @@ if (typeof window !== 'undefined') (function () {
     const baseFloor = (THEME0 => THEME0)({ 0: '#E8D8B0', 1: '#D9D2BE', 2: '#BFE3DD' }[viewMap] || '#1a1812');
     ctx.fillStyle = baseFloor; ctx.fillRect(0, 0, vw, vh); // 整图底色（消灭黑边）
     ctx.fillStyle = '#0E0C0A33';
-    ctx.save(); ctx.translate(vw / 2 - cam.x, vh / 2 - cam.y);
+    ctx.save();
+    const shk = performance.now() / 1000 < shake.until ? shake.amp : 0;
+    ctx.translate(vw / 2 - cam.x + (shk ? (Math.random() - .5) * shk * 2 : 0), vh / 2 - cam.y + (shk ? (Math.random() - .5) * shk * 2 : 0));
 
     // ── 地面：按地图主题逐房间绘制（32px 棋盘砖+墙裙）──
     const THEMES = {
@@ -1250,7 +1365,7 @@ if (typeof window !== 'undefined') (function () {
     // 场景布景
     if (viewMap === 0) { A.desks(ctx, 240, 520, 4); A.label(ctx, '老师还在拖堂…', 550, 100, { size: 18, color: '#FDE047' }); }
     if (viewMap === 1) { for (let i = 0; i < 8; i++) { A.lockers(ctx, 300 + i * 240, 120, 4); A.lockers(ctx, 300 + i * 240, 1040, 4); } A.label(ctx, '← 教室                              厕所 →', 1200, 90, { size: 16 }); }
-    if (viewMap === 2) A.tilesWall(ctx, 60, 60, 1680, 30);
+    if (viewMap === 2) { const room = MAPS[2].rooms[0]; A.toiletEnv(ctx, room, tSec); A.stallRow(ctx, sim.stalls, tSec); }
     A.label(ctx, '【' + map.name + '】', cam.x, tp + 34, { size: 17, color: '#FDE047' });
 
     // ── 连接口门牌 ──
@@ -1263,7 +1378,7 @@ if (typeof window !== 'undefined') (function () {
       if (vis(SINK.x, SINK.y, 60)) A.sink(ctx, SINK.x, SINK.y, tSec);
       for (const st of sim.stalls) {
         if (!vis(st.x, st.y, 130)) continue;
-        A.door(ctx, st, sim.shownOcc(st), tSec);
+        A.door(ctx, st, sim.shownOcc(st), sim.t, tSec);
       }
     }
 
@@ -1276,12 +1391,18 @@ if (typeof window !== 'undefined') (function () {
 
     // ── 角色（专属造型/动作/状态）+ 头顶信息条 ──
     for (const p of sim.players) {
-      if (p.mapId !== viewMap || !vis(p.x, p.y, 70)) continue;
-      // 动作状态标记（ART §2.2）：移动中/疾跑/霸体/激怒
-      const pvx = p._lastX === undefined ? 0 : p.x - p._lastX, pvy = p._lastY === undefined ? 0 : p.y - p._lastY;
-      p.moving = Math.abs(pvx) + Math.abs(pvy) > 0.5; p._lastX = p.x; p._lastY = p.y;
-      p.speedRun = p.moving && (Math.abs(pvx) + Math.abs(pvy)) > 2.2;
-      p.armorNow = sim.t < p.armorUntil; p.rageNow = sim.t < p.rageUntil;
+      if (p.mapId !== viewMap) continue;
+      // 隔间内玩家对外完全不可见（裁决#33）：不画本体/名字/忍耐条/进度/倒计时
+      if (p.atStall >= 0) {
+        const st = sim.stalls[p.atStall];
+        if (st && vis(st.x, st.y, 130) && sim.t - (st.occSince || 0) > s(15)) A.shameSign(ctx, st.doorPt.x, st.doorPt.y - 46, tSec);
+        continue;
+      }
+      if (!vis(p.x, p.y, 70)) continue;
+      // 动作状态（Sim 侧租约，避免 60fps×20Hz 抖动）
+      p.animMove = sim.t < (p.mvUntil || 0); p.animSpeed = Math.hypot(p.vx || 0, p.vy || 0);
+      p.animKind = (p.anim && sim.t < p.anim.until) ? p.anim.kind : null;
+      p.animT = (p.animKind && p.anim) ? clamp((sim.t - p.anim.t0) / Math.max(1, p.anim.until - p.anim.t0), 0, 1) : 0;
       ctx.save(); ctx.globalAlpha = p.final ? .38 : 1;
       ctx.translate(p.x, p.y);
       A.character(ctx, p, tSec);
@@ -1289,29 +1410,17 @@ if (typeof window !== 'undefined') (function () {
       if (p.final) continue;
       const nm = p.name + (p.endurance < 30 ? '(夹腿)' : '');
       A.label(ctx, nm, p.x, p.y - 40, { size: 11, lw: 4, color: p.id === 0 ? '#FDE047' : '#FFF7ED' });
-      // 忍耐条（描边块）
       const bw = 34, e = clamp(p.endurance, 0, 100) / 100;
       A.px(ctx, p.x - bw / 2, p.y - 36, bw, 6, '#00000066');
       A.px(ctx, p.x - bw / 2, p.y - 36, bw * e, 6, e > .5 ? '#4ADE80' : e > .3 ? '#FBBF24' : '#EF4444');
       A.outline(ctx, p.x - bw / 2, p.y - 36, bw, 6, '#1F1A17', 1);
       if (p.beaten > 0) A.label(ctx, `揍${p.beaten}/8`, p.x - 34, p.y - 42, { size: 9, lw: 3, color: '#FB923C' });
-      // 状态 chips
       let chip = '';
-      if (p.state === 'relief') chip = '排便中 ' + Math.ceil(p.relief.left / TICK) + 's';
-      else if (p.state === 'post') chip = '没纸!';
-      else if (p.naked) chip = '光屁股 ' + Math.max(0, (p.post.autoAt - sim.t) / TICK).toFixed(0) + 's';
+      if (p.naked) chip = '光屁股 ' + Math.max(0, (p.post.autoAt - sim.t) / TICK).toFixed(0) + 's';
       else if (p.climbed >= 0) chip = p.hasClimbedPaper ? '爬出(Q)' : '取纸(Q)';
       else if (p.charging) chip = p.charging.push ? '推门! X撤' : ({ wire: '撬锁', ladder: '翻墙', poke: '捅门', bonk: '拍晕', knock: '拍门', sniff: '嗅闻', paper: '递纸', clear: '疏通', takePaper: '取纸', climbOut: '爬出', wash: '洗手', punch: '出拳!', enterStall: '进入' }[p.charging.type] || p.charging.type) + '…';
       if (chip) A.bubble(ctx, p.x, p.y + 44, chip, { size: 10, bg: '#26221ADD', border: p.charging && p.charging.push ? '#EF4444' : '#8A5A3B' });
-      // 排便进度条
-      if (p.state === 'relief' && p.relief) {
-        const pr = 1 - p.relief.left / p.relief.total;
-        A.px(ctx, p.x - 20, p.y + 26, 40, 6, '#00000066'); A.px(ctx, p.x - 20, p.y + 26, 40 * pr, 6, '#38BDF8'); A.outline(ctx, p.x - 20, p.y + 26, 40, 6, '#1F1A17', 1);
-      }
-      // 占坑侠
-      if (p.atStall >= 0 && p.state !== 'relief' && sim.t - (p.enterT || 0) > s(15)) A.shameSign(ctx, p.x, p.y - 56, tSec);
-      // 霸体/激怒环
-      if (sim.t < p.armorUntil || sim.t < p.rageUntil) { ctx.strokeStyle = sim.t < p.rageUntil ? '#F97316' : '#38BDF8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.x, p.y, 18, 0, 7); ctx.stroke(); }
+      if (sim.t < p.immuneUntil || sim.t < p.rageUntil) { ctx.strokeStyle = sim.t < p.rageUntil ? '#F97316' : '#FDE047'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.x, p.y, 18, 0, 7); ctx.stroke(); }
     }
 
     // ── 几何降级特效 + 拟声字 + 场景内 tips ──
@@ -1344,13 +1453,8 @@ if (typeof window !== 'undefined') (function () {
       if (viewMap === 2) {
         for (const st of sim.stalls) {
           const d = dist(you, st.doorPt); if (d > NUM.reach || !vis(st.x, st.y, 130)) continue;
-          let msg = '';
-          if (st.occ === 'dean') msg = '⚠ 疑似主任 · Q 有风险';
-          else if (st.occ && st.occ !== you) msg = st.obstacle ? 'Q 骚扰/翻入' : 'Q 骚扰(有人)';
-          else if (st.obstacle) msg = 'Q 清障(需工具)';
-          else if (st.hasPaper) msg = 'Q 进入(有纸✓)';
-          else msg = 'Q 进入(没纸!)';
-          A.bubble(ctx, st.x + st.w/2, st.y - 34, msg, { size: 10, bg:'#1F1A17DD', border: st.occ==='dean'?'#EF4444':'#FDE047' });
+          const msg = st.occ ? '门后有人 · Q 骚扰/闯入' : 'Q 进入隔间';
+          A.bubble(ctx, st.x + st.w/2, st.y - 34, msg, { size: 10, bg:'#1F1A17DD', border: st.occ ? '#EF4444' : '#FDE047' });
         }
         if (you.naked && dist(you, SINK) <= NUM.reach) A.bubble(ctx, SINK.x, SINK.y - 50, 'R 洗手 · 优雅 +5s', { size: 10, bg:'#1F1A17DD', border:'#38BDF8' });
       }
@@ -1753,6 +1857,62 @@ if (typeof window === 'undefined' && process.argv[2] === 'test') (function () {
     sim.queue(0, 'knock', { idx: 0 }); sim.tick();
     ok(!A.charging, '跨图玩家不可对隔间发起意图');
     ok(sim.events.some(e => e.type === 'intentFail'), '应被明确拒绝');
+  });
+
+  // T19：隔间信息保密——进门才揭示；障碍不再拒绝进入
+  T('进门揭示：障碍/纸只有进入者知道', () => {
+    const sim = mkSim(701); const A = sim.players[0], V = sim.players[1];
+    const st = sim.stalls[0]; st.obstacle = 'anaconda'; st.hasPaper = false; st.occ = null;
+    place(sim, 0, st.doorPt.x, st.doorPt.y);
+    sim.queue(0, 'enterStall', { idx: 0 }); step(sim, NUM.guide.enter + 2);
+    ok(A.atStall === 0, '有障碍也应能进入');
+    eq(A.state, 'idle', '堵塞态不开始排便');
+    ok(A.relief === null, '不应有排便进度');
+    const rev = sim.events.find(e => e.type === 'stallReveal');
+    ok(rev && rev.pid === 0 && rev.obstacle === 'anaconda' && rev.hasPaper === false, '应只给进入者揭示');
+    ok(sim.events.some(e => e.type === 'stallBlocked'), '应有堵塞提示事件');
+    // 离开
+    sim.queue(0, 'leaveStall'); sim.tick();
+    ok(A.atStall < 0 && st.occ === null, '出门后释放占用');
+    eq(A.x, st.doorPt.x, '回到门前');
+  });
+
+  // T20：隔间内清障后自动开拉
+  T('隔间内清障→自动开拉', () => {
+    const sim = mkSim(702); const A = sim.players[0];
+    const st = sim.stalls[1]; st.obstacle = 'berry'; st.hasPaper = true; st.occ = null;
+    A.items.push('plunger'); A._charges = { plunger: 2 };
+    place(sim, 0, st.doorPt.x, st.doorPt.y);
+    sim.queue(0, 'enterStall', { idx: 1 }); step(sim, NUM.guide.enter + 2);
+    ok(A.atStall === 1 && A.state === 'idle', '先进入堵塞间');
+    sim.queue(0, 'clear', { idx: 1 }); step(sim, NUM.guide.clearPB + 2);
+    eq(st.obstacle, null, '障碍已清');
+    eq(A.state, 'relief', '清完自动开始排便');
+  });
+
+  // T21：隔间内被逼出 → 回到门外，占用释放
+  T('隔间内被逼出回门外', () => {
+    const sim = mkSim(703); const A = sim.players[0], V = sim.players[1];
+    const st = sim.stalls[2]; st.obstacle = null; st.occ = null;
+    place(sim, 0, st.doorPt.x, st.doorPt.y);
+    sim.queue(0, 'enterStall', { idx: 2 }); step(sim, NUM.guide.enter + 2);
+    ok(A.atStall === 2 && A.state === 'relief', '进入并开始排便');
+    sim._evict(st, 1);
+    ok(A.atStall < 0 && st.occ === null, '逼出后离开隔间');
+    eq(A.x, st.doorPt.x, '人在门口');
+    ok(A.immuneUntil > sim.t, '获得骚扰免疫');
+  });
+
+  // T22：隔间内不出现在世界视野（渲染层跳过 atStall>=0）
+  T('隔间内对外不可见（数据契约）', () => {
+    const sim = mkSim(704); const A = sim.players[0];
+    const st = sim.stalls[3]; st.obstacle = null; st.occ = null;
+    place(sim, 0, st.doorPt.x, st.doorPt.y);
+    sim.queue(0, 'enterStall', { idx: 3 }); step(sim, NUM.guide.enter + 2);
+    ok(A.atStall === 3, '在隔间内');
+    // 世界视图的可见集合应排除 atStall>=0 的玩家
+    const visible = sim.players.filter(pp => pp.mapId === 2 && pp.atStall < 0);
+    ok(!visible.includes(A), '进入隔间者不在世界可见集合');
   });
 
   // T12：主任激怒 → 惩罚不判负、主任离场
