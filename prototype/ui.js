@@ -207,5 +207,37 @@
     mo.observe(timerEl, { childList: true, characterData: true, subtree: true });
   }
 
-  window.UI = { say, skill, tip, teachEndurance, goLandscape, SKILLS };
+  /* ---------- 拾取道具说明 toast（非打断式） ---------- */
+  const ITEM_INFO = {
+    mask:    ['🥽 口罩', '免疫嗅闻传染与恶臭（戴上即生效）'],
+    broom:   ['🧹 扫把', '对红门按 Q：门缝捅人（骚扰+1）· 也可通巨蟒'],
+    wire:    ['🔧 铁丝', '对红门按 Q：撬锁闯入（骚扰+3），推门期 X 可撤'],
+    ladder:  ['🪜 梯子', '对红门按 Q：翻墙闯入（骚扰+3），可翻入取纸'],
+    plunger: ['🪠 搋子', '对红门按 Q：拍晕（骚扰+1）· 清巨蟒/草莓塔必备'],
+    paper:   ['🧻 卫生纸', '自己无纸时完成善后；也可对喊话的人按 Q 递纸'],
+    comic:   ['📖 漫画书', '拿着就行：排便时间 -5s'],
+    soda:    ['🥤 憋气糖', '按 F 使用：20 秒内忍耐流失减半'],
+    poster:  ['🏷️ 假指示贴', '按 F 对最近隔间贴：翻转红绿灯骗人 20 秒'],
+  };
+  const toastHost = doc.createElement('div');
+  toastHost.style.cssText = 'position:absolute;right:10px;top:88px;display:flex;flex-direction:column;gap:8px;pointer-events:none;z-index:65;';
+  layer.appendChild(toastHost);
+  function itemToast(kind) {
+    const it = ITEM_INFO[kind]; if (!it) return;
+    const el = doc.createElement('div');
+    el.style.cssText = `pointer-events:none;min-width:230px;max-width:290px;padding:10px 14px;background:linear-gradient(#2b241b,#1b1710);
+      border:3px solid ${({mask:'#8ECAE6',broom:'#BDB76B',wire:'#B0B0B8',ladder:'#C68B59',plunger:'#8D5A3A',paper:'#F4F0E6',comic:'#FF9F68',soda:'#90E0A0',poster:'#C084FC'})[kind] || '#FDE047'};
+      border-radius:12px;color:#fff7ed;font-size:12px;font-weight:700;box-shadow:0 6px 18px #000a;
+      animation:toastIn .3s cubic-bezier(.2,1.5,.4,1) both;`;
+    el.innerHTML = `<div style="font-size:14px;font-weight:900;color:#FDE047;text-shadow:1px 1px 0 #000;">获得 ${it[0]}</div>
+      <div style="margin-top:4px;line-height:1.5;color:#e7e5e4;">${it[1]}</div>`;
+    toastHost.appendChild(el);
+    setTimeout(() => { el.style.transition = 'opacity .4s, transform .4s'; el.style.opacity = '0'; el.style.transform = 'translateX(30px)'; }, 4600);
+    setTimeout(() => el.remove(), 5100);
+  }
+  const toastCss = doc.createElement('style');
+  toastCss.textContent = '@keyframes toastIn{from{transform:translateX(60px);opacity:0}to{transform:translateX(0);opacity:1}}';
+  doc.head.appendChild(toastCss);
+
+  window.UI = { say, skill, tip, teachEndurance, goLandscape, itemToast, SKILLS };
 })();

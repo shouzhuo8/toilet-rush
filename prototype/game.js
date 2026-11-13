@@ -10,8 +10,7 @@ const s = (sec) => Math.round(sec * TICK); // 秒 → tick
 
 const NUM = {
   drain: { poo: 0.36 }, // 局长 4~8min：步行上限 ≈278s
-  runMult: 1.5, sneakMult: 0.5,
-  speed: { run: 60, walk: 43, sneak: 21.6 }, // px/s（≈12px/m）
+  speed: 95, // 统一行进速度（约 2.2× 旧步行）：无跑/走/潜之分（裁决#22）
   relief: { poop: s(38) },
   turboSave: s(13), comicSave: s(5),
   guide: { wire: s(1.2), ladder: s(2), poke: s(1.5), bonk: s(0.5), knock: s(1.5), wash: s(1.5), takePaper: s(0.5), climbPaper: s(1.5), climbOut: s(0.8),
@@ -42,8 +41,8 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
  * map0 教室(900×620) / map1 教室外-三平行走廊(1800×620) / map2 厕所(1100×760)
  * 跨图零可见；连接口自动切图；摄像机跟随。 */
 const MAPS = [
-  { id: 0, name: '教室', W: 1800, H: 1100, floor: 'floorClass', label: '教室',
-    rooms: [{ x: 60, y: 140, w: 1680, h: 820 }] },
+  { id: 0, name: '教室', W: 1100, H: 800, floor: 'floorClass', label: '教室',
+    rooms: [{ x: 60, y: 140, w: 980, h: 520 }] },
   { id: 1, name: '教室外', W: 2400, H: 1200, floor: 'floorFast', label: '走廊',
     rooms: [
       { x: 40, y: 160, w: 140, h: 920 },                // 西竖井（教室门落点，纵贯三路）
@@ -61,7 +60,7 @@ function inToilet(p) { return p.mapId === 2; }
 
 /* 连接口（§2.1）：触发区 + 落点 + 锁定条件 */
 const CONNECTIONS = [
-  { from: 0, to: 1, trig: { x: 1700, y: 500, w: 60, h: 60 }, land: { x: 100, y: 600 }, dir: 1, lock: 'bell', oneWay: true, label: '教室出口' },
+  { from: 0, to: 1, trig: { x: 1000, y: 380, w: 60, h: 60 }, land: { x: 100, y: 600 }, dir: 1, lock: 'bell', oneWay: true, label: '教室出口' },
   { from: 1, to: 2, trig: { x: 2300, y: 560, w: 60, h: 60 }, land: { x: 130, y: 980 }, dir: 1, label: '厕所门' },
   { from: 2, to: 1, trig: { x: 70, y: 950, w: 60, h: 60 }, land: { x: 2330, y: 600 }, dir: -1, label: '厕所门' },
 ];
@@ -71,7 +70,7 @@ const STALLS = [ // map2 坐标（上排 3 间 y=140，下排 2 间 y=520）
   { x: 540, y: 780 }, { x: 1020, y: 780 },
 ].map((u, i) => ({ idx: i, mapId: 2, x: u.x, y: u.y, w: 110, h: 110, doorPt: { x: u.x + 55, y: u.y - 30 }, inPt: { x: u.x + 55, y: u.y + 55 }, occ: null, occId: 0, occKind: null, obstacle: null, hasPaper: false, harass: 0, lastH: -9999, lockBy: -1, lockUntil: 0, fakeOcc: null, fakeUntil: 0 }));
 const SINK = { x: 1500, y: 560, mapId: 2 };
-const SPAWNS = [0, 1, 2, 3, 4].map(i => ({ x: 240 + i * 120, y: 540 })); // map0
+const SPAWNS = [0, 1, 2, 3, 4].map(i => ({ x: 170, y: 230 + i * 100 })); // map0 西墙纵向一列：全员到东门等距（公平裁决#23）
 const ROUTES = { // map1 内分段路径（西井→东路→东井）
   fast: [{ x: 140, y: 610 }, { x: 500, y: 610 }, { x: 1900, y: 610 }, { x: 2220, y: 610 }],
   A: [{ x: 140, y: 1010 }, { x: 500, y: 1010 }, { x: 1900, y: 1010 }, { x: 2220, y: 610 }],
@@ -125,7 +124,7 @@ class Sim {
     this.players = NAMES.map((n, i) => ({
       id: i, name: n, color: COLORS[i], debuff: 'poo', mapId: 0, switchCdUntil: 0, _sim: null,
       x: SPAWNS[i].x, y: SPAWNS[i].y, dir: 1,
-      endurance: 100, moveMode: 'walk', sneaking: false,
+      endurance: 100,
       state: 'idle', // idle|relief|post|stagger —— FINAL 由 final 字段表达
       relief: null, // {kind,total,left}
       post: null, // {shouted, autoAt}
@@ -152,11 +151,11 @@ class Sim {
     let itemId = 1; this.items = [];
     const put = (kind, x, y) => this.items.push({ id: itemId++, kind, mapId: 2, x, y, taken: false });
     const put1 = (kind, x, y) => this.items.push({ id: itemId++, kind, mapId: 1, x, y, taken: false });
-    put1('mask', 700, 570); put1('mask', 700, 590); put1('wire', 700, 610);
-    put1('paper', 700, 630); put1('comic', 700, 650); put1('soda', 700, 670); // A 路：同一 x 并排 6 件
+    put1('mask', 450, 1015); put1('mask', 580, 1015); put1('wire', 710, 1015);
+    put1('paper', 840, 1015); put1('comic', 970, 1015); put1('soda', 1100, 1015); // A 路沿线 x 间隔 130px
     put1('poster', 1200, 610); // 快速路中点（顺手恶作剧，单件不参与争抢）
-    put1('broom', 700, 170); put1('broom', 700, 195); put1('ladder', 700, 220);
-    put1('plunger', 700, 245); put1('paper', 700, 270); // B 路：同一 x 并排 5 件
+    put1('broom', 450, 210); put1('broom', 580, 210); put1('ladder', 710, 210);
+    put1('plunger', 840, 210); put1('paper', 970, 210); // B 路沿线 x 间隔 130px
     put('plunger', 1560, 560); put('paper', 1600, 560); // 洗手台旁（map2，put 默认）
 
     // 主任
@@ -293,7 +292,7 @@ class Sim {
       if (p.final) continue;
       // 忍耐流失
       if (p.state === 'idle') {
-        let mult = p.moveMode === 'run' ? NUM.runMult : p.moveMode === 'sneak' ? NUM.sneakMult : 1;
+        let mult = 1; // 统一速度：无移动流失倍率
         if (t < p.sodaUntil) mult *= NUM.soda.mult;
         if (t < p.drainBuffUntil) mult *= 1.25;
         p.endurance -= NUM.drain.poo * mult * this.G / TICK;
@@ -393,7 +392,7 @@ class Sim {
         if (item.kind === 'broom' || item.kind === 'plunger') p._charges = { ...p._charges, [item.kind]: 2 };
         this._ev('pick', { pid: p.id, kind: item.kind }); return;
       }
-      case 'move': { p.moveMode = tg.mode; return; }
+      case 'move': { return; } // 裁决#22：跑/走/潜已废除
       case 'enterStall': {
         if (!st || dist(p, st.doorPt) > (inToilet(p) ? NUM.reach : NUM.actR + 30)) return fail('far');
         if (this.t < p.reenterCDUntil) return fail('cd');
@@ -679,11 +678,11 @@ function movePlayer(p, vx, vy, dt) {
   if (p.final || p.atStall >= 0 || p.charging && !p.charging.push && ['wire', 'ladder'].includes(p.charging.type)) return;
   if (p.charging) return; // 引导中不可移动（取消才行）
   if (p.staggerUntil > 0 && p._simT < p.staggerUntil) return;
-  let sp = NUM.speed[p.moveMode] || NUM.speed.walk;
+  let sp = NUM.speed;
   if (p.naked) sp *= NUM.post.nakedMult; // 光屁股夹着走
   if (p.endurance < 30) sp *= 0.85; // 夹腿
   let nx = p.x + vx * sp * dt, ny = p.y + vy * sp * dt;
-  if (p._sim && p._sim.phase === 'prep' && p.mapId === 0) nx = Math.min(nx, 1690); // 铃前老师堵门
+  if (p._sim && p._sim.phase === 'prep' && p.mapId === 0) nx = Math.min(nx, 990); // 铃前老师堵门
   if (walkable(p.mapId, nx, p.y)) p.x = nx;
   if (walkable(p.mapId, p.x, ny)) p.y = ny;
   if (vx !== 0) p.dir = vx > 0 ? 1 : -1;
@@ -729,12 +728,12 @@ class Bot {
         if (dist(p, target.doorPt) <= NUM.reach - 8) {
           if (target === paperRoom) sim.queue(p.id, 'takePaper', { idx: target.idx });
           else sim.queue(p.id, 'raidPaper', { idx: target.idx });
-        } else { const ax = target.doorPt.x - p.x, ay = target.doorPt.y - p.y, ad = Math.hypot(ax, ay) || 1; movePlayer(p, ax / ad, ay / ad, (10 / TICK)); }
+        } else { const ax = target.doorPt.x - p.x, ay = target.doorPt.y - p.y, ad = Math.hypot(ax, ay) || 1; movePlayer(p, ax / ad, ay / ad, Math.min(ad / NUM.speed, 0.5)); }
         return;
       }
       if (dist(p, SINK) <= NUM.reach - 8) { sim.queue(p.id, 'wash'); return; }
       const ax = SINK.x - p.x, ay = SINK.y - p.y, ad = Math.hypot(ax, ay) || 1;
-      movePlayer(p, ax / ad, ay / ad, (10 / TICK));
+      movePlayer(p, ax / ad, ay / ad, Math.min(ad / NUM.speed, 0.5));
       return;
     }
     // 在厕所：找位置/行动
@@ -747,7 +746,7 @@ class Bot {
       if (p.mapId === 1 && dist(p, target) <= NUM.pickR + 10) { sim.queue(p.id, 'pick', { id: this.sim.items.find(it => !it.taken && it.kind === 'plunger').id }); return; }
       if (p.mapId === 1 && p.items.includes('plunger')) { this.fetch = false; }
       const ax2 = target.x - p.x, ay2 = target.y - p.y, ad2 = Math.hypot(ax2, ay2) || 1;
-      movePlayer(p, ax2 / ad2, ay2 / ad2, (10 / TICK));
+      movePlayer(p, ax2 / ad2, ay2 / ad2, Math.min(ad2 / NUM.speed, 0.5));
       return;
     }
     if (this.fetch && p.items.includes('plunger') && p.mapId === 1) { /* 已取得，继续赶路去厕所 */ this.fetch = false; }
@@ -795,22 +794,23 @@ class Bot {
       // 没有够近的目标 → 朝最近的空房门移动（全速，每 0.5s 一次 think）
       const goal = near ? near.st.doorPt : reds.length ? reds[0].st.doorPt : { x: 1250, y: 320 };
       const ax = goal.x - p.x, ay = goal.y - p.y, ad = Math.hypot(ax, ay) || 1;
-      if (ad > 12) movePlayer(p, ax / ad, ay / ad, (10 / TICK));
+      if (ad > 12) movePlayer(p, ax / ad, ay / ad, Math.min(ad / NUM.speed, 0.5));
       return;
     }
     // 赶路（含"最后一段进厕所"）：所有路径的终点都在厕所内部，wi 走完后继续补位到门内安全点
     // ── 三图分段赶路（MAP-INTERACTION §5）──
     let goal = null;
-    if (p.mapId === 0) goal = { x: 1725, y: 530 };                       // 教室出口触发区
+    if (p.mapId === 0) goal = { x: 1025, y: 410 };                       // 教室出口触发区
     else if (p.mapId === 1) {
       goal = (this.wps && this.wi < this.wps.length) ? this.wps[this.wi] : { x: 2325, y: 610 }; // 走完路径→东井厕所门触发区
     } else if (p.mapId === 2) goal = null;                              // 厕所内逻辑已在前分支
     if (goal) {
-      if (dist(p, goal) < 16) {
+      const dGoal = dist(p, goal);
+      if (dGoal < 60) { // 提速后单步 ~47px，判定半径同步放大防冲过震荡
         if (p.mapId === 1 && this.wps && this.wi < this.wps.length) { this.wi++; return; }
       }
       const dx = goal.x - p.x, dy = goal.y - p.y, d = Math.hypot(dx, dy) || 1;
-      movePlayer(p, dx / d, dy / d, (10 / TICK));
+      movePlayer(p, dx / d, dy / d, Math.min(dGoal / (NUM.speed || 60), 0.5)); // 单步位移不超过剩余距离
     }
   }
   _myStall() { return this.p.atStall; }
@@ -910,6 +910,7 @@ if (typeof window !== 'undefined') (function () {
     for (const ev of sim.events) {
       const p = sim.players[ev.pid] || null;
       if (ev.type === 'uiSkill' && ev.pid === 0) uiSkill(ev.key);
+      if (ev.type === 'pick' && ev.pid === 0 && window.UI) window.UI.itemToast(ev.kind);
       if (ev.type === 'switchMap' && ev.to === 2 && ev.pid === 0) tipOnce('toilet', '💡 5 间隔间：绿灯空房可进，红灯要闯；卷纸挂墙是明牌', 'warn', 4.2);
       if (ev.type === 'postStuck' && ev.pid === 0) tipOnce('post', '💡 没纸？光屁股出门去别间取纸，或洗手台优雅结束(+5s)', 'warn', 4.2);
       if (ev.type === 'punchHit' && ev.vid === 0) tipOnce('punched', '💡 挨揍 8 次会被打出屎！P 键还手，击退不硬直', 'danger', 3.8);
@@ -1203,7 +1204,7 @@ if (typeof window !== 'undefined') (function () {
       if (r.label) A.label(ctx, r.label, r.x + r.w / 2, r.y + 28, { size: 14, color: '#FFF7ED' });
     }
     // 场景布景
-    if (viewMap === 0) { A.desks(ctx, 200, 520, 8); A.label(ctx, '老师还在拖堂…', 900, 100, { size: 18, color: '#FDE047' }); }
+    if (viewMap === 0) { A.desks(ctx, 240, 520, 4); A.label(ctx, '老师还在拖堂…', 550, 100, { size: 18, color: '#FDE047' }); }
     if (viewMap === 1) { A.lockers(ctx, 400, 168, 5); A.lockers(ctx, 400, 968, 5); A.label(ctx, '← 教室              厕所 →', 750, 92, { size: 15, color: '#FFF7ED' }); }
     if (viewMap === 2) A.tilesWall(ctx, 60, 60, 1680, 30);
     A.label(ctx, '【' + map.name + '】', cam.x, tp + 34, { size: 17, color: '#FDE047' });
@@ -1364,13 +1365,8 @@ if (typeof window !== 'undefined') (function () {
         if (keys['a'] || keys['arrowleft']) vx -= 1;
         if (keys['d'] || keys['arrowright']) vx += 1;
         if (joy.on) { vx = joy.dx; vy = joy.dy; }
-        you.moveMode = keys['shift'] ? 'run' : keys['control'] ? 'sneak' : you.moveMode === 'run' && !keys['shift'] ? 'walk' : you.moveMode;
         if (vx || vy) { const d = Math.hypot(vx, vy); you._simT = sim.t; movePlayer(you, vx / d, vy / d, TICK_MS / 1000); }
-        // 键盘模式覆盖（不触碰触屏按钮设定的模式）
-        if (keys['shift']) you.moveMode = 'run';
-        else if (keys['control']) you.moveMode = 'sneak';
-        else if (you._kbdMode) { you.moveMode = 'walk'; you._kbdMode = false; }
-        if (keys['shift'] || keys['control']) you._kbdMode = true;
+        // 裁决#22：统一行进速度，废除跑/走/潜三态
       }
       // AI
       for (const b of bots) { b.p._simT = sim.t; b.think(sim.t); b.onSniffResult; }
@@ -1669,18 +1665,18 @@ if (typeof window === 'undefined' && process.argv[2] === 'test') (function () {
   // T17：三地图切图事务（ABORT 回滚 / 落点 / 防横跳冷却 / 铃前阻挡）
   T('三地图连接口与切图事务', () => {
     const sim = mkSim(501); const A = sim.players[0];
-    // 铃前：教室出口阻挡（x 不超过 1690）
-    A.mapId = 0; A.x = 1660; A.y = 530; sim.phase = 'prep'; A._simT = sim.t;
+    // 铃前：教室出口阻挡（x 不超过 990）
+    A.mapId = 0; A.x = 960; A.y = 410; sim.phase = 'prep'; A._simT = sim.t;
     movePlayer(A, 1, 0, 1);
-    ok(A.x <= 1690, '铃前老师堵门');
+    ok(A.x <= 990, '铃前老师堵门');
     // 铃后：走入出口触发区 → 切图到 map1
-    sim.phase = 'run'; sim.bellT = sim.t; A.x = 1720; A.y = 530;
+    sim.phase = 'run'; sim.bellT = sim.t; A.x = 1020; A.y = 410;
     sim.touchConnections(A);
     eq(A.mapId, 1, '应切到教室外');
     eq(A.x, CONNECTIONS[0].land.x, '落点正确');
     ok(A.switchCdUntil > sim.t, '应有 1.5s 防横跳冷却');
     // 冷却内再次踩触发区不生效
-    A.x = 1720; A.y = 530; const mapBefore = A.mapId;
+    A.x = 1020; A.y = 410; const mapBefore = A.mapId;
     sim.touchConnections(A);
     eq(A.mapId, mapBefore, '冷却内不反横跳');
     // 在途引导切图 → ABORT 回滚（铁丝保留）

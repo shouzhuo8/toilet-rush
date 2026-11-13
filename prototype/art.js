@@ -228,7 +228,7 @@
   /* ---------- 道具：9 种可辨像素图标 ---------- */
   function item(ctx, kind, x, y, t) {
     const bob = Math.sin(t * 4 + x) * 2;
-    ctx.save(); ctx.translate(x, y + bob);
+    ctx.save(); ctx.translate(x, y + bob); ctx.scale(1.45, 1.45); // 图标整体放大 1.45×（裁决#24）
     // 掉落光晕
     ctx.globalAlpha = .3; circle(ctx, 0, 0, 13, C.gold); ctx.globalAlpha = 1;
     circle(ctx, 0, 0, 10, C.paper); outline(ctx, -10, -10, 20, 20, C.ink, 2);
